@@ -103,6 +103,9 @@ async function setReference(file) {
   if (!file || !file.type.startsWith("image/")) return;
   st.refB64 = await HATCH.toPngB64(file, 1024);
   st.refData = HATCH.pixels(await HATCH.decode(st.refB64));
+  showReference();
+}
+function showReference() {
   const drop = $("drop");
   drop.classList.add("has");
   drop.innerHTML = "";
@@ -125,6 +128,73 @@ function updateEstimate() {
   $("estimate").innerHTML = `预计 <b>${n}</b> 次图像生成（形象 1 次 + 动作 ${n - 1} 次；向左走由向右走镜像得到${$("withLook").checked ? "；看向方向含 1 次上右下左锚点" : ""}）。失败重试另计，费用以你的接口计费为准。`;
 }
 $("withLook").addEventListener("change", updateEstimate);
+
+// ---------- saved run (resume after closing the window) ----------
+// Self-tests don't touch a real saved run unless asked to (`persist`).
+const persist = !window.__PERCHY_SELFTEST__ || !!window.__PERCHY_SELFTEST__.persist;
+function saveMeta() {
+  if (!persist || !st.baseB64) return;
+  const rows = {};
+  for (const [id, r] of Object.entries(st.rows))
+    if (r.raw || r.status === "bad") rows[id] = { status: r.status, warnings: r.warnings || [], error: r.error || "" };
+  invoke("hatch_put_meta", { meta: {
+    version: 1, savedAt: new Date().toISOString(),
+    name: $("petName").value, desc: $("petDesc").value, style: $("style").value,
+    withLook: $("withLook").checked, key: st.key, profileId: $("profile").value, petId: $("petId").value, rows,
+  } }).catch((e) => console.warn("save meta failed", String(e)));
+}
+function saveImage(name, b64) {
+  if (persist) invoke("hatch_put_image", { name, png: b64 }).catch((e) => console.warn("save image failed", name, String(e)));
+}
+
+async function offerResume() {
+  if (!persist) return;
+  const run = await invoke("hatch_load").catch(() => null);
+  if (!run?.images?.base) return;
+  const m = run.meta || {};
+  const planned = S.filter((s) => !s.mirrorOf && (!(s.look || s.cardinal) || m.withLook)).length;
+  const done = Object.keys(run.images).filter((k) => k.startsWith("row-")).length;
+  const area = $("baseArea");
+  area.className = "box";
+  area.innerHTML = "";
+  const p = document.createElement("p");
+  p.style.margin = "0 0 10px";
+  p.textContent = `上次的孵化还没完成：「${m.name || "未命名"}」，动作已完成 ${done}/${planned} 行（${new Date(m.savedAt).toLocaleString()}）。继续的话已生成的图不会重新收费。`;
+  const go = document.createElement("button"); go.className = "primary"; go.textContent = "继续上次";
+  const drop = document.createElement("button"); drop.textContent = "丢弃"; drop.style.marginLeft = "8px";
+  go.onclick = () => restoreRun(run);
+  drop.onclick = async () => {
+    if (!confirm("丢弃上次孵化的所有图片？")) return;
+    await invoke("hatch_clear");
+    area.className = "empty"; area.textContent = "先在左边填好 AI 接口和宠物信息，然后点「生成形象」。";
+  };
+  area.append(p, go, drop);
+}
+
+async function restoreRun(run) {
+  const m = run.meta || {};
+  $("petName").value = m.name || ""; $("petDesc").value = m.desc || "";
+  $("style").value = m.style || "auto"; $("withLook").checked = !!m.withLook; updateEstimate();
+  if (m.profileId && st.profiles.some((p) => p.id === m.profileId)) { $("profile").value = m.profileId; fillForm(currentProfile()); }
+  if (m.petId) $("petId").value = m.petId;
+  if (run.images.ref) {
+    st.refB64 = run.images.ref;
+    st.refData = HATCH.pixels(await HATCH.decode(st.refB64));
+    showReference();
+  }
+  st.key = m.key || "green";
+  st.baseB64 = run.images.base;
+  renderBase(await HATCH.processBase(st.baseB64));
+  for (const s of S) {
+    const raw = run.images["row-" + s.id];
+    if (raw) await applySheet(s, raw, false);
+    else if (m.rows?.[s.id]?.status === "bad") st.rows[s.id] = { status: "bad", error: m.rows[s.id].error };
+  }
+  relayout();
+  renderCards();
+  setStatus($("mainStatus"), "已恢复上次的进度。点「生成全部动作」只会补上还没完成的行。", "ok");
+  afterRows();
+}
 
 // ---------- generation ----------
 async function generate(prompt, images, size) {
@@ -154,6 +224,11 @@ async function genBase() {
     st.baseB64 = await generate(prompt, st.refB64 ? [st.refB64] : [], "1024x1024");
     const base = await HATCH.processBase(st.baseB64);
     renderBase(base);
+    // A new base starts a new run: old sheets no longer match it.
+    if (persist) await invoke("hatch_clear").catch(() => {});
+    if (st.refB64) saveImage("ref", st.refB64);
+    saveImage("base", st.baseB64);
+    saveMeta();
     setStatus(el, "形象好了。满意的话点「生成全部动作」，不满意可以改描述后重新生成。", "ok");
     console.info("base ok", base.bgKind, base.warnings.join("; "));
     return true;
@@ -229,7 +304,22 @@ function relayout() {
 const ready = (id) => ["ok", "warn"].includes(st.rows[id]?.status);
 const depsOf = (s) => (s.look ? ["look-cardinals"] : []);
 
-async function genRow(s) {
+/** Turn a generated sheet into frames for state `s` (and its mirror). */
+async function applySheet(s, raw, save = true) {
+  const out = await HATCH.processSheet(raw, s);
+  st.rows[s.id] = { status: out.ok && !out.warnings.length ? "ok" : out.ok ? "warn" : "bad", frames: out.frames, cells: out.cells, warnings: out.warnings, raw,
+    error: out.ok ? "" : "帧数不够：" + out.warnings.join("；") };
+  for (const m of S.filter((x) => x.mirrorOf === s.id))
+    st.rows[m.id] = { status: st.rows[s.id].status === "bad" ? "bad" : "ok", frames: out.frames, cells: HATCH.mirrorCells(out.cells), warnings: [], error: st.rows[s.id].error };
+  if (save) { saveImage("row-" + s.id, raw); saveMeta(); }
+  relayout();
+  return st.rows[s.id].status;
+}
+
+// Errors not worth an automatic retry (bad key, bad request, wrong model…).
+const permanent = (e) => /^HTTP 4(0[0-4]|1\d|2[0-8])/.test(String(e));
+
+async function genRow(s, attempt = 1) {
   const missing = depsOf(s).filter((d) => !ready(d));
   if (missing.length) {
     st.rows[s.id] = { status: "bad", error: "需要先生成：" + missing.map((d) => S.find((x) => x.id === d).label).join("、") };
@@ -238,20 +328,25 @@ async function genRow(s) {
   }
   st.rows[s.id] = { status: "run" };
   renderCards();
+  let retry = false;
   try {
     const prompt = HATCH.sheetPrompt(s, st.key, $("style").value);
     const refs = [st.baseB64, ...depsOf(s).map((d) => st.rows[d].raw)];
     const raw = await generate(prompt, refs, HATCH.layoutFor(s.frames).size);
-    const out = await HATCH.processSheet(raw, s);
-    st.rows[s.id] = { status: out.ok && !out.warnings.length ? "ok" : out.ok ? "warn" : "bad", frames: out.frames, cells: out.cells, warnings: out.warnings, raw,
-      error: out.ok ? "" : "帧数不够：" + out.warnings.join("；") };
-    for (const m of S.filter((x) => x.mirrorOf === s.id))
-      st.rows[m.id] = { status: st.rows[s.id].status === "bad" ? "bad" : "ok", frames: out.frames, cells: HATCH.mirrorCells(out.cells), warnings: [], error: st.rows[s.id].error };
-    relayout();
-    console.info("row", s.id, st.rows[s.id].status, out.warnings.join("; "));
+    const status = await applySheet(s, raw);
+    console.info("row", s.id, status, (st.rows[s.id].warnings || []).join("; "));
+    retry = status === "bad";
   } catch (e) {
     st.rows[s.id] = { status: "bad", error: String(e) };
     console.error("row failed", s.id, String(e));
+    retry = !permanent(e);
+    saveMeta();
+  }
+  // One automatic retry for frames that came out unusable or a flaky request.
+  if (retry && attempt < 2) {
+    console.info("row", s.id, "retrying once");
+    await new Promise((r) => setTimeout(r, window.__PERCHY_SELFTEST__ ? 200 : 3000));
+    return genRow(s, attempt + 1);
   }
   renderCards();
 }
@@ -298,7 +393,10 @@ function afterRows() {
   return true;
 }
 
+// Several callers may ask for the atlas at once; only the newest result counts.
+let buildSeq = 0;
 async function buildFinal() {
+  const seq = ++buildSeq;
   relayout();
   const rows = {};
   for (const s of S) if (s.row != null) rows[s.row] = st.rows[s.id]?.cells;
@@ -308,6 +406,7 @@ async function buildFinal() {
     rows[9] = Array(8).fill(idle); rows[10] = Array(8).fill(idle);
   }
   const { canvas, b64 } = await HATCH.composeAtlas(rows);
+  if (seq !== buildSeq) return; // a newer build superseded this one
   st.atlasB64 = b64;
   const view = $("atlas").getContext("2d");
   view.clearRect(0, 0, 1536, 2288); view.drawImage(canvas, 0, 0);
@@ -332,6 +431,7 @@ async function install() {
       perchyJson: JSON.stringify({ format: "perchy/1", tags: ["ai-hatched"], generator: { tool: "perchy-hatch", protocol: p?.protocol, model: p?.model } }, null, 2),
     });
     setStatus(el, `${done.replaced ? "已更新" : "已安装"}「${done.displayName}」，桌宠已经换成它了。`, "ok");
+    if (persist) invoke("hatch_clear").catch(() => {});
     console.info("installed", done.key);
     return done;
   } catch (e) {
@@ -356,7 +456,7 @@ setInterval(() => {
 
 // ---------- start ----------
 updateEstimate();
-loadProfiles().then(selftest);
+loadProfiles().then(() => (window.__PERCHY_SELFTEST__ ? selftest() : offerResume()));
 
 // Dev self-test (`perchy --hatch-selftest <base url> <images|chat>`) runs the
 // whole flow against a mock server (see tools/mock-image-api.py).
@@ -365,8 +465,9 @@ async function selftest() {
   if (!cfg) return;
   const q = { get: (k) => cfg[k] };
   console.info("selftest start", q.get("protocol"));
+  let saved = { id: "" };
   try {
-    const saved = await invoke("ai_save_profile", {
+    saved = await invoke("ai_save_profile", {
       profile: { id: "", name: "selftest-" + q.get("protocol"), protocol: q.get("protocol") || "images", baseUrl: q.get("selftest"), model: "mock-image", quality: null, transparent: !!q.get("transparent") },
       apiKey: "test-key",
     });
@@ -376,11 +477,29 @@ async function selftest() {
     await genAll();
     if (!afterRows()) throw new Error("rows incomplete: " + JSON.stringify(Object.fromEntries(Object.entries(st.rows).map(([k, v]) => [k, v.status + (v.error ? ":" + v.error : "")]))));
     await buildFinal();
+    if (persist) {
+      // Save/restore round trip: rebuild everything from the stored run and
+      // expect a byte-identical atlas.
+      const before = st.atlasB64;
+      const beforeRaw = Object.fromEntries(Object.entries(st.rows).map(([k, v]) => [k, v.raw]));
+      const run = await invoke("hatch_load");
+      for (const [k, raw] of Object.entries(beforeRaw))
+        if (raw && run.images["row-" + k] !== raw) console.warn("selftest stored sheet differs:", k);
+      if (run.images.base !== st.baseB64) console.warn("selftest stored base differs");
+      const rows = Object.keys(run?.images || {}).filter((k) => k.startsWith("row-")).length;
+      st.rows = {}; st.baseB64 = null; st.atlasB64 = null;
+      await restoreRun(run);
+      await buildFinal();
+      console.info("selftest resume", st.atlasB64 === before ? "OK" : "MISMATCH", `stored rows=${rows}`);
+      if (st.atlasB64 !== before) throw new Error("resume produced a different atlas");
+    }
     $("petId").value = "selftest-" + q.get("protocol");
     const done = await install();
     console.info("selftest", done ? "PASS " + done.key : "FAIL install");
-    await invoke("ai_delete_profile", { id: saved.id });
   } catch (e) {
     console.error("selftest FAIL", String(e));
+  } finally {
+    await invoke("ai_delete_profile", { id: saved.id }).catch(() => {});
+    if (persist) await invoke("hatch_clear").catch(() => {});
   }
 }

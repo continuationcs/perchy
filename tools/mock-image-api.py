@@ -7,6 +7,7 @@ from the prompt and draws simple "pets" (body + head + eyes) on chroma green,
 moving them per frame (bob / jump / walk). For jumping it draws one extra pose
 in the spare cell so the extractor's "extra pose" warning is exercised.
 Like OpenRouter with gpt-image-2, it rejects `background: transparent` and `n`.
+The first "failed" sheet is two poses short (exercises the automatic retry).
 
     python3 tools/mock-image-api.py 8765               # OpenAI-style
     python3 tools/mock-image-api.py 8765 --openrouter  # no /images/edits; JSON /images + input_references
@@ -50,6 +51,8 @@ def pet(buf, w, h, cx, ground, size, t, kind):
         step = size * 0.08 * math.sin(2 * math.pi * t + (0 if fx < 0 else math.pi)) if kind.startswith("running") else 0
         ellipse(buf, w, h, cx + size * fx + step, gy - size * 0.03, size * 0.1, size * 0.06, (200, 110, 40))
 
+SEEN = {}
+
 def draw(prompt, size):
     m = re.search(r"(\d+)x(\d+)", size or "") or re.search(r"size (\d+)x(\d+)", prompt)
     w, h = (int(m.group(1)), int(m.group(2))) if m else (1024, 1024)
@@ -62,6 +65,11 @@ def draw(prompt, size):
     n = 8 if "16-direction" in prompt else int(re.search(r"with (\d+) frames", prompt).group(1))
     kind = (re.search(r'Animation "([\w-]+)"', prompt) or [None, "look"])[1]
     draw_n = n + 1 if kind == "jumping" and n < cols * rows else n
+    # The first "failed" sheet comes back two poses short, to exercise the
+    # pipeline's automatic retry.
+    SEEN[kind] = SEEN.get(kind, 0) + 1
+    if kind == "failed" and SEEN[kind] == 1:
+        draw_n = n - 2
     cw, ch = w / cols, h / rows
     for i in range(draw_n):
         cx, cy = (i % cols + 0.5) * cw, (i // cols) * ch

@@ -76,7 +76,8 @@ pub fn list<R: Runtime>(app: &AppHandle<R>) -> Vec<PetEntry> {
 
 /// Resolve `path` inside the pet identified by `key`, refusing anything that
 /// could escape the pet's directory (absolute paths, `..`, symlinks out).
-fn resolve<R: Runtime>(app: &AppHandle<R>, key: &str, path: &str) -> Result<PathBuf, String> {
+/// Canonical directory of the pet identified by `key` ("<source>:<dir name>").
+pub fn pet_dir<R: Runtime>(app: &AppHandle<R>, key: &str) -> Result<PathBuf, String> {
     let (source, name) = key.split_once(':').ok_or("bad pet key")?;
     if !plain_name(name) {
         return Err("bad pet key".into());
@@ -86,11 +87,15 @@ fn resolve<R: Runtime>(app: &AppHandle<R>, key: &str, path: &str) -> Result<Path
         .find(|(s, _)| *s == source)
         .map(|(_, r)| r)
         .ok_or("unknown pet source")?;
+    root.join(name).canonicalize().map_err(|e| e.to_string())
+}
+
+fn resolve<R: Runtime>(app: &AppHandle<R>, key: &str, path: &str) -> Result<PathBuf, String> {
     let rel = Path::new(path);
     if path.is_empty() || !rel.components().all(|c| matches!(c, Component::Normal(_))) {
         return Err(format!("illegal path: {path}"));
     }
-    let dir = root.join(name).canonicalize().map_err(|e| e.to_string())?;
+    let dir = pet_dir(app, key)?;
     let file = dir.join(rel).canonicalize().map_err(|e| format!("{path}: {e}"))?;
     if !file.starts_with(&dir) {
         return Err(format!("illegal path: {path}"));

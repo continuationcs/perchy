@@ -9,6 +9,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod ai;
+mod hatch_run;
 mod install;
 mod pets;
 mod screens;
@@ -163,6 +164,7 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &zone,
             &displays,
             &MenuItem::with_id(app, "hatch", "孵化新宠物（AI）…", true, None::<&str>)?,
+            &MenuItem::with_id(app, "export", "导出当前宠物为 .pet", true, None::<&str>)?,
             &MenuItem::with_id(app, "open-pets-dir", "打开宠物文件夹", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "reset", "把它叫回来", true, None::<&str>)?,
@@ -259,6 +261,48 @@ fn install_generated(
     Ok(done)
 }
 
+/// Export a pet as `<Downloads>/<id>.pet` and reveal it in Finder / Explorer.
+#[tauri::command]
+fn export_pet(app: AppHandle, key: String) -> Result<String, String> {
+    let path = install::export(&app, &key)?;
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg("-R").arg(&path).spawn();
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn();
+    println!("[perchy] exported {key} → {}", path.display());
+    Ok(path.file_name().unwrap().to_string_lossy().into_owned())
+}
+
+/// Chinese app menu bar (shown while the hatch window makes Perchy a regular
+/// app). The Edit menu keeps ⌘C / ⌘V working in text fields.
+#[cfg(target_os = "macos")]
+fn app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let sep = || PredefinedMenuItem::separator(app);
+    let perchy = Submenu::with_items(app, "Perchy", true, &[
+        &PredefinedMenuItem::about(app, Some("关于 Perchy"), None)?,
+        &sep()?,
+        &PredefinedMenuItem::hide(app, Some("隐藏 Perchy"))?,
+        &PredefinedMenuItem::hide_others(app, Some("隐藏其他"))?,
+        &PredefinedMenuItem::show_all(app, Some("全部显示"))?,
+        &sep()?,
+        &PredefinedMenuItem::quit(app, Some("退出 Perchy"))?,
+    ])?;
+    let edit = Submenu::with_items(app, "编辑", true, &[
+        &PredefinedMenuItem::undo(app, Some("撤销"))?,
+        &PredefinedMenuItem::redo(app, Some("重做"))?,
+        &sep()?,
+        &PredefinedMenuItem::cut(app, Some("剪切"))?,
+        &PredefinedMenuItem::copy(app, Some("拷贝"))?,
+        &PredefinedMenuItem::paste(app, Some("粘贴"))?,
+        &PredefinedMenuItem::select_all(app, Some("全选"))?,
+    ])?;
+    let window = Submenu::with_items(app, "窗口", true, &[
+        &PredefinedMenuItem::minimize(app, Some("最小化"))?,
+        &PredefinedMenuItem::close_window(app, Some("关闭窗口"))?,
+    ])?;
+    Menu::with_items(app, &[&perchy, &edit, &window])
+}
+
 /// The "孵化新宠物" window (a normal, focusable app window).
 fn open_hatch<R: Runtime>(app: &AppHandle<R>, selftest: Option<serde_json::Value>) {
     if let Some(w) = app.get_webview_window("hatch") {
@@ -314,6 +358,11 @@ fn main() {
             set_passthrough,
             log,
             take_pending_pet,
+            export_pet,
+            hatch_run::hatch_put_image,
+            hatch_run::hatch_put_meta,
+            hatch_run::hatch_load,
+            hatch_run::hatch_clear,
             install_generated,
             ai::ai_profiles,
             ai::ai_save_profile,
@@ -353,6 +402,9 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
+            #[cfg(target_os = "macos")]
+            app.set_menu(app_menu(app.handle())?)?;
+
             let window = app.get_webview_window("main").expect("main window");
             screens::ensure_placement(&window);
             window.set_ignore_cursor_events(true)?;
@@ -383,14 +435,15 @@ fn main() {
             install_paths(app.handle(), path_args(std::env::args(), &cwd));
             watch(app.handle().clone());
 
-            // Dev: `perchy --hatch-selftest <base url> <images|chat>` runs the
+            // Dev: `perchy --hatch-selftest <base url> <images|chat> [transparent] [persist]` runs the
             // hatch flow end-to-end against a mock API (tools/mock-image-api.py).
             let args: Vec<String> = std::env::args().collect();
             if let Some(i) = args.iter().position(|a| a == "--hatch-selftest") {
                 let cfg = serde_json::json!({
                     "selftest": args.get(i + 1).cloned().unwrap_or_default(),
                     "protocol": args.get(i + 2).cloned().unwrap_or_else(|| "images".into()),
-                    "transparent": args.get(i + 3).is_some_and(|a| a == "transparent"),
+                    "transparent": args.iter().skip(i + 3).any(|a| a == "transparent"),
+                    "persist": args.iter().skip(i + 3).any(|a| a == "persist"),
                 });
                 open_hatch(app.handle(), Some(cfg));
             }

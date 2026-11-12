@@ -44,6 +44,10 @@ pub struct Profile {
     /// JSON `/images` with `input_references` (OpenRouter).
     #[serde(default)]
     pub edits: Option<String>,
+    /// Whether a key was stored for this profile. Kept here so listing
+    /// profiles never touches the keychain (each read can prompt on macOS).
+    #[serde(default)]
+    pub key_saved: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -79,12 +83,26 @@ fn entry(id: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new(KEYCHAIN_SERVICE, id).map_err(|e| format!("钥匙串不可用：{e}"))
 }
 
+/// Keys read from the keychain are cached for the life of the process, so
+/// macOS asks for keychain access at most once per profile per launch.
+fn key_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, String>>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
 fn get_key(id: &str) -> Option<String> {
-    entry(id).ok()?.get_password().ok().filter(|k| !k.is_empty())
+    if let Some(k) = key_cache().lock().unwrap().get(id) {
+        return Some(k.clone());
+    }
+    let key = entry(id).ok()?.get_password().ok().filter(|k| !k.is_empty())?;
+    key_cache().lock().unwrap().insert(id.to_string(), key.clone());
+    Some(key)
 }
 
 fn view(p: Profile) -> ProfileView {
-    let has_key = get_key(&p.id).is_some();
+    // Profiles saved before `key_saved` existed: true is the likely answer
+    // and the first real use reads (and caches) the key anyway.
+    let has_key = p.key_saved.unwrap_or(true) || key_cache().lock().unwrap().contains_key(&p.id);
     ProfileView { profile: p, has_key }
 }
 
@@ -118,6 +136,11 @@ pub fn ai_save_profile(app: AppHandle, mut profile: Profile, api_key: Option<Str
     }
     if let Some(key) = api_key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty()) {
         entry(&profile.id)?.set_password(&key).map_err(|e| format!("保存 API key 失败：{e}"))?;
+        key_cache().lock().unwrap().insert(profile.id.clone(), key);
+        profile.key_saved = Some(true);
+    }
+    if profile.key_saved.is_none() {
+        profile.key_saved = profiles.iter().find(|p| p.id == profile.id).and_then(|p| p.key_saved).or(Some(false));
     }
     match profiles.iter_mut().find(|p| p.id == profile.id) {
         Some(existing) => *existing = profile.clone(),
@@ -133,6 +156,7 @@ pub fn ai_delete_profile(app: AppHandle, id: String) -> Result<(), String> {
     if let Ok(e) = entry(&id) {
         let _ = e.delete_credential();
     }
+    key_cache().lock().unwrap().remove(&id);
     store(&app, &profiles)
 }
 
@@ -404,7 +428,7 @@ mod tests {
     fn drops_rejected_params() {
         let p = Profile {
             id: "x".into(), name: "x".into(), protocol: "images".into(), base_url: "u".into(),
-            model: "m".into(), quality: Some("low".into()), transparent: true, edits: None,
+            model: "m".into(), quality: Some("low".into()), transparent: true, edits: None, key_saved: None,
         };
         let err = "http 400 bad request：no provider for openai/gpt-image-2 supports the requested parameter(s): background \"transparent\"";
         let q = without_rejected(&p, err).unwrap();

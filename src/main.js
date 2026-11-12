@@ -175,6 +175,11 @@ listen("tray", ({ payload }) => {
     pet.vx = 0; setState("sleep");
   } else if (payload.startsWith("pet:")) {
     usePet(payload.slice(4));
+  } else if (payload === "export") {
+    if (petKey === "builtin") { say("内置的团子猫不能导出，换一只宠物再试", 3); return; }
+    invoke("export_pet", { key: petKey })
+      .then((name) => say(`已导出到「下载」：${name}`, 4))
+      .catch((e) => say("导出失败：" + e, 5));
   } else if (payload.startsWith("zone:")) {
     setZone(payload.slice(5));
   } else if (payload.startsWith("size:")) {

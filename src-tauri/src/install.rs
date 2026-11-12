@@ -230,6 +230,61 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, src: &Path) -> Result<Installed, 
     result
 }
 
+/// Pack a pet directory into `<Downloads>/<id>.pet` (zip, files at the root,
+/// same junk filter and size limits as installing). Returns the file path.
+pub fn export<R: Runtime>(app: &AppHandle<R>, key: &str) -> Result<PathBuf, String> {
+    use tauri::Manager;
+    use zip::write::SimpleFileOptions;
+
+    let dir = pets::pet_dir(app, key)?;
+    let (id, _) = validate(&dir)?;
+    let out_dir = app.path().download_dir().map_err(|e| e.to_string())?;
+    let mut out = out_dir.join(format!("{id}.pet"));
+    let mut n = 2;
+    while out.exists() {
+        out = out_dir.join(format!("{id}-{n}.pet"));
+        n += 1;
+    }
+
+    let mut files = Vec::new();
+    collect(&dir, &dir, &mut files, &mut Budget { files: 0, bytes: 0 })?;
+    let tmp = out.with_extension("pet.part");
+    let result = (|| {
+        let mut zip = zip::ZipWriter::new(fs::File::create(&tmp).map_err(|e| e.to_string())?);
+        let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        for rel in &files {
+            let name = rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
+            zip.start_file(name, opts).map_err(|e| e.to_string())?;
+            io::copy(&mut fs::File::open(dir.join(rel)).map_err(|e| e.to_string())?, &mut zip).map_err(|e| e.to_string())?;
+        }
+        zip.finish().map_err(|e| e.to_string())?;
+        fs::rename(&tmp, &out).map_err(|e| e.to_string())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result.map(|_| out)
+}
+
+fn collect(root: &Path, dir: &Path, out: &mut Vec<PathBuf>, budget: &mut Budget) -> Result<(), String> {
+    let mut entries: Vec<_> = fs::read_dir(dir).map_err(|e| e.to_string())?.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        let rel = entry.path().strip_prefix(root).unwrap().to_path_buf();
+        let meta = fs::symlink_metadata(entry.path()).map_err(|e| e.to_string())?;
+        if is_junk(&rel) || meta.file_type().is_symlink() {
+            continue;
+        }
+        if meta.is_dir() {
+            collect(root, &entry.path(), out, budget)?;
+        } else {
+            budget.take(meta.len())?;
+            out.push(rel);
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

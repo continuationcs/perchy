@@ -22,7 +22,7 @@ cargo run
 | 鼠标在它身上来回蹭 | 被撸 → 脸红 + 爱心 |
 | 鼠标靠近 | 眼睛跟着鼠标 |
 | 45 秒没理它 | 可能睡着（Zzz） |
-| 托盘菜单 | 把它叫回来 / 哄它睡觉 / 大小（小～超大，按宠物记住） |
+| 托盘菜单 | 把它叫回来 / 哄它睡觉 / 大小（小～超大，按宠物记住）/ 活动范围 / 导出当前宠物为 .pet（存到「下载」） |
 
 ## 宠物
 
@@ -50,7 +50,7 @@ npx @tauri-apps/cli@2 build --debug --bundles app
 
 接口拒绝的可选参数（如 `gpt-image-2` 不支持透明背景）会自动去掉重试并关闭该选项；不发送 `n`。
 
-API key 存系统钥匙串（服务名 `io.perchy.desktop.ai`），配置（不含 key）存 `<应用配置目录>/ai-profiles.json`。请求在 Rust 侧发出，key 不进 webview。
+API key 存系统钥匙串（服务名 `io.perchy.desktop.ai`），读到后在内存里缓存，一次运行最多访问一次钥匙串；列出配置时不读钥匙串。macOS 弹授权框时选「始终允许」；开发版每次重新编译签名都会变，会再问一次，正式签名的发布版不会，配置（不含 key）存 `<应用配置目录>/ai-profiles.json`。请求在 Rust 侧发出，key 不进 webview。
 
 **流程**（`src/hatch-pipeline.js`）：
 
@@ -59,7 +59,8 @@ API key 存系统钥匙串（服务名 `io.perchy.desktop.ai`），配置（不�
 3. 抠图：背景色距离给出硬边 alpha；混入背景色的像素（半透明发丝、纱裙、软边）按「抠像通道的超出量」估计混合比例并反混合还原颜色；轮廓附近再去一次溢色。选抠像底色时会排除参考图自己的背景。
 4. 切帧与缩放：连通域按质心分到格子 → 所有行共用一个缩放比例（以待机行身高为准，站立身高 150 px，给举手、跳跃留空间）→ 统一地面线（跳跃超出格子时只压缩高度）→ 拼成 1536×2288 的 Codex v2 图集。
 5. 自动检查：缺帧、多出姿势、碰到图片边缘、越出格子、背景不是纯色；每行可单独重新生成。
-6. 安装：走与 `.pet` 相同的校验，生成的宠物同时也是合法的 Codex 宠物。
+6. 可靠性：失败或帧数不够的行自动重试一次（API key 错误这类 4xx 不重试）；生成过程存盘在 `<应用数据目录>/hatch-run/`，关掉窗口或崩溃后再打开可「继续上次」，已生成的图不再收费，安装成功后自动清除。
+7. 安装：走与 `.pet` 相同的校验，生成的宠物同时也是合法的 Codex 宠物。
 
 **离线自测**（不花钱）：
 
@@ -71,7 +72,7 @@ python3 tools/mock-image-api.py 8765
 cd src-tauri && cargo run -- --hatch-selftest http://127.0.0.1:8765/v1 images
 ```
 
-把最后的 `images` 换成 `chat` 测另一种协议；模拟接口加 `--openrouter` 模拟 OpenRouter（没有 `/images/edits`）。日志里出现 `selftest PASS` 即全流程通过。质量指标（色边比例、各行身体宽度是否一致）：
+把最后的 `images` 换成 `chat` 测另一种协议；末尾加 `persist` 额外验证存盘恢复（会清掉未完成的孵化）；模拟接口加 `--openrouter` 模拟 OpenRouter（没有 `/images/edits`）。日志里出现 `selftest PASS` 即全流程通过。质量指标（色边比例、各行身体宽度是否一致）：
 
 ```bash
 python3 tools/analyze-atlas.py <宠物目录>/spritesheet.png
@@ -88,6 +89,7 @@ src-tauri/src/main.rs  覆盖工作区的透明窗口、托盘、cursor_local / 
 src-tauri/src/pets.rs  宠物发现（list_pets）与限定在宠物目录内的文件读取（read_pet_file）
 src-tauri/src/install.rs  .pet / .zip / 目录的校验与安装
 src-tauri/src/ai.rs     AI 接口配置、钥匙串、两种 OpenAI 协议调用
+src-tauri/src/hatch_run.rs  未完成孵化的存盘与恢复
 src/hatch.html / hatch.js / hatch-pipeline.js  孵化窗口与图像流水线
 tools/mock-image-api.py   离线测试用的模拟图像接口
 ```
