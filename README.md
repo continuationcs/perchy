@@ -115,3 +115,9 @@ tools/mock-image-api.py   离线测试用的模拟图像接口
 - Windows 只做过交叉编译类型检查（`cargo check --target x86_64-pc-windows-msvc`），未在真机运行。
 - 跨屏拖拽、多显示器、不抢焦点后的点击/拖拽手感未实测（本机单屏、无法模拟鼠标）。
 - 每帧一次 IPC 轮询光标，后续可改为 Rust 侧推送并在原生层直接做命中检测。
+
+## 授权
+
+- 代码：[MIT](LICENSE)
+- 预设宠物素材（图片、音效）：[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+- 参与开发见 [CONTRIBUTING.md](CONTRIBUTING.md)

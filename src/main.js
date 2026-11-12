@@ -198,6 +198,10 @@ function scaled(r, mul) {
     draw: (g, p, t) => { g.save(); g.scale(mul, mul); r.draw(g, p, t); g.restore(); },
   };
 }
+/** Tell the tray which pet / size / zone to tick. */
+function reportUi() {
+  invoke("report_ui_state", { pet: petKey, size: String(sizeMul), zone: zoneMode }).catch(() => {});
+}
 function applySize() {
   renderer = scaled(baseRenderer, sizeMul);
   sizeBuffer();
@@ -207,6 +211,7 @@ function setSize(mul) {
   sizeMul = mul;
   try { localStorage.setItem(sizeKey(petKey), String(mul)); } catch {}
   applySize();
+  reportUi();
   pet.y = Math.min(pet.y, H);
   if (pet.state !== "held") { pet.vy = -200; setState("air"); }
 }
@@ -266,7 +271,9 @@ function drawBubble() {
 
 // ---------- pet switching ----------
 const PET_PREF = "perchy.pet";
-async function usePet(key) {
+// `remember: false` for automatic fallbacks, so a missing pet doesn't
+// overwrite the user's own choice.
+async function usePet(key, remember = true) {
   let next = window.builtinRenderer;
   if (key !== "builtin") {
     try {
@@ -284,7 +291,8 @@ async function usePet(key) {
   sizeMul = 1;
   try { sizeMul = Number(localStorage.getItem(sizeKey(key))) || 1; } catch {}
   applySize();
-  try { localStorage.setItem(PET_PREF, key); } catch {}
+  reportUi();
+  if (remember) try { localStorage.setItem(PET_PREF, key); } catch {}
   console.info("[perchy] pet:", key, renderer.name, `S=${renderer.S} h=${Math.round(renderer.height)}`);
   // Drop the new pet in from above.
   pet.y = -40; pet.vx = 0; pet.vy = 0; setState("air");
@@ -320,6 +328,7 @@ function nearestHome(x) {
 function setZone(mode) {
   zoneMode = mode;
   try { localStorage.setItem(ZONE_PREF, mode); } catch {}
+  reportUi();
   touch(clock);
   if (!zoneOf(pet.x) && (pet.state === "idle" || pet.state === "walk" || pet.state === "sleep")) {
     pet.target = nearestHome(pet.x); setState("walk");
@@ -481,5 +490,10 @@ requestAnimationFrame(frame);
   // A pet just installed by double-clicking a .pet wins.
   const pending = await invoke("take_pending_pet").catch(() => null);
   const first = pending ?? saved ?? (pets[0] ? pets[0].key : "builtin");
-  if (first !== "builtin" && !(await usePet(first))) usePet("builtin");
+  // If the remembered pet is gone, fall back to an installed one, then the cat.
+  if (first !== "builtin" && !(await usePet(first))) {
+    const other = pets.find((p) => p.key !== first);
+    if (!other || !(await usePet(other.key, false))) await usePet("builtin", false);
+  }
+  reportUi(); // also covers starting on the built-in cat
 })();

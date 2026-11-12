@@ -66,6 +66,35 @@ fn power_state(state: State<PowerState>) -> Power {
     state.0.lock().unwrap().clone()
 }
 
+/// What the overlay currently shows, so the tray can tick the right items.
+/// The frontend owns these choices (they're remembered per pet) and reports
+/// every change through `report_ui_state`.
+#[derive(Default, Clone, PartialEq)]
+struct UiState {
+    pet: String,
+    size: String,
+    zone: String,
+}
+
+#[derive(Default)]
+struct TrayState(Mutex<UiState>);
+
+#[tauri::command]
+fn report_ui_state(app: AppHandle, state: State<TrayState>, pet: String, size: String, zone: String) {
+    let next = UiState { pet, size, zone };
+    let changed = {
+        let mut cur = state.0.lock().unwrap();
+        let changed = *cur != next;
+        *cur = next;
+        changed
+    };
+    if changed {
+        let ui = state.0.lock().unwrap().clone();
+        println!("[perchy] tray state: pet={} size={} zone={}", ui.pet, ui.size, ui.zone);
+        refresh_tray(&app);
+    }
+}
+
 fn refresh_tray<R: Runtime>(app: &AppHandle<R>) {
     if let (Some(tray), Ok(menu)) = (app.tray_by_id("main"), build_menu(app)) {
         let _ = tray.set_menu(Some(menu));
@@ -126,12 +155,14 @@ fn watch<R: Runtime>(app: AppHandle<R>) {
 fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     // "换宠物" lists the built-in cat plus every pet found on disk
     // (Perchy's own pets dir and the user's Codex pets).
+    let ui = app.try_state::<TrayState>().map(|s| s.0.lock().unwrap().clone()).unwrap_or_default();
     let switcher = Submenu::with_id(app, "pets", "换宠物", true)?;
-    switcher.append(&MenuItem::with_id(app, "pet:builtin", "团子猫（内置）", true, None::<&str>)?)?;
+    let on = |key: &str| ui.pet == key;
+    switcher.append(&CheckMenuItem::with_id(app, "pet:builtin", "团子猫（内置）", true, on("builtin"), None::<&str>)?)?;
     for pet in pets::list(app) {
         let tag = if pet.source == "codex" { " · Codex" } else { "" };
         let label = format!("{}{}", pet.display_name, tag);
-        switcher.append(&MenuItem::with_id(app, format!("pet:{}", pet.key), label, true, None::<&str>)?)?;
+        switcher.append(&CheckMenuItem::with_id(app, format!("pet:{}", pet.key), label, true, on(&pet.key), None::<&str>)?)?;
     }
     let displays = Submenu::with_id(app, "displays", "显示器", true)?;
     if let Some(window) = app.get_webview_window("main") {
@@ -144,7 +175,8 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     // Size multiplier for the current pet (remembered per pet by the frontend).
     let size = Submenu::with_id(app, "size", "大小", true)?;
     for (id, label) in [("size:0.75", "小"), ("size:1", "标准"), ("size:1.3", "大"), ("size:1.6", "特大"), ("size:2", "超大")] {
-        size.append(&MenuItem::with_id(app, id, label, true, None::<&str>)?)?;
+        let checked = id == format!("size:{}", ui.size);
+        size.append(&CheckMenuItem::with_id(app, id, label, true, checked, None::<&str>)?)?;
     }
     // Where the pet may roam (kept away from the middle of the screen by default).
     let zone = Submenu::with_id(app, "zone", "活动范围", true)?;
@@ -154,7 +186,8 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ("zone:left", "只在左下角"),
         ("zone:full", "整个屏幕底部"),
     ] {
-        zone.append(&MenuItem::with_id(app, id, label, true, None::<&str>)?)?;
+        let checked = id == format!("zone:{}", ui.zone);
+        zone.append(&CheckMenuItem::with_id(app, id, label, true, checked, None::<&str>)?)?;
     }
     Menu::with_items(
         app,
@@ -353,11 +386,13 @@ fn main() {
         }))
         .manage(PendingPet::default())
         .manage(PowerState::default())
+        .manage(TrayState::default())
         .invoke_handler(tauri::generate_handler![
             cursor_local,
             set_passthrough,
             log,
             take_pending_pet,
+            report_ui_state,
             export_pet,
             hatch_run::hatch_put_image,
             hatch_run::hatch_put_meta,
