@@ -63,6 +63,18 @@
           ]
         }
       }
-    ]
+    ],
+    "createUpdaterArtifacts": false
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk0RTYwMTk2OEU1NTFDRUEKUldUcUhGV09sZ0htbEd5ZzFVa3hZMjVKQmZ6M0NzOFo2UGpsajJyYTVPUU9taC9HK0dhcVpkeEMK",
+      "endpoints": [
+        "https://github.com/continuationcs/perchy/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

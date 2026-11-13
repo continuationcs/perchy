@@ -27,11 +27,14 @@ pub struct Settings {
     /// Drop to 30 fps on battery power.
     #[serde(default = "yes")]
     pub battery_saver: bool,
+    /// Check GitHub for new versions in the background (update.rs).
+    #[serde(default = "yes")]
+    pub auto_update: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { monitor: None, hide_fullscreen: true, battery_saver: true }
+        Settings { monitor: None, hide_fullscreen: true, battery_saver: true, auto_update: true }
     }
 }
 
@@ -106,7 +109,7 @@ pub fn get_settings(app: AppHandle) -> SettingsView {
     }
 }
 
-/// `name` is one of: hideFullscreen, batterySaver, autostart (bool) or
+/// `name` is one of: hideFullscreen, batterySaver, autoUpdate, autostart (bool) or
 /// display (string key).
 #[tauri::command]
 pub fn set_setting(app: AppHandle, name: String, value: serde_json::Value) -> Result<(), String> {
@@ -119,6 +122,10 @@ pub fn set_setting(app: AppHandle, name: String, value: serde_json::Value) -> Re
             let on = value.as_bool().ok_or("expected a boolean")?;
             update(&app, |s| s.battery_saver = on);
             crate::refresh_power(&app);
+        }
+        "autoUpdate" => {
+            let on = value.as_bool().ok_or("expected a boolean")?;
+            update(&app, |s| s.auto_update = on);
         }
         "autostart" => {
             let on = value.as_bool().ok_or("expected a boolean")?;

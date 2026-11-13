@@ -112,6 +112,10 @@
     }
     #toast.on { opacity: 1; transform: translateX(-50%); }
     #toast.bad { background: var(--bad); color: #fff; }
+    .notes { white-space: pre-wrap; font-size: 12.5px; margin-top: 6px; max-height: 160px; overflow-y: auto; -webkit-user-select: text; user-select: text; }
+    .progress { height: 6px; background: var(--bg); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+    .progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+    .row[hidden] { display: none; }
     .about { padding: 16px; display: flex; gap: 14px; align-items: center; }
     .about img { width: 56px; height: 56px; }
     .about b { font-size: 16px; }
@@ -198,12 +202,32 @@
   </section>
 
   <section class="page" id="page-about" hidden>
-    <h1>关于</h1>
+    <h1>关于与更新</h1>
     <div class="card about">
       <canvas id="aboutPet" width="112" height="112" style="width:56px;height:56px"></canvas>
       <div>
         <b>栖栖 Perchy</b> <span id="version" class="hint"></span>
         <div class="hint" style="margin:2px 0 0">开源桌面宠物，兼容 Codex 宠物包。</div>
+      </div>
+    </div>
+    <h2>更新</h2>
+    <div class="card rows">
+      <div class="row">
+        <div class="label"><span id="updState">当前版本</span><small id="updDetail"></small></div>
+        <button class="btn" id="updCheck">检查更新</button>
+      </div>
+      <div class="row" id="updAvail" hidden>
+        <div class="label">
+          <b id="updVersion"></b>
+          <small id="updDate"></small>
+          <div id="updNotes" class="notes"></div>
+          <div class="progress" id="updProgress" hidden><i></i></div>
+        </div>
+        <button class="btn primary" id="updInstall">更新并重启</button>
+      </div>
+      <div class="row">
+        <div class="label">自动检查更新<small>启动后和每隔 6 小时检查一次；有新版本时提示，不会自动安装</small></div>
+        <label class="switch"><input type="checkbox" id="autoUpdate" /><span></span></label>
       </div>
     </div>
     <h2>授权</h2>

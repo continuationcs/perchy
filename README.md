@@ -33,7 +33,7 @@ cargo run
 | 宠物 | 带缩略图的宠物列表，点击切换，悬停可导出；孵化新宠物；打开宠物文件夹；大小。把 .pet / .zip / 宠物文件夹拖进窗口即安装 |
 | 行为 | 活动范围；活跃程度（安静 / 正常 / 活泼）；自动睡觉（20 秒～5 分钟 / 从不） |
 | 系统 | 显示器；全屏时自动隐藏；开机自动启动；用电池时省电（30 帧） |
-| 关于 | 版本与授权 |
+| 关于与更新 | 版本、检查更新、更新说明、「更新并重启」、自动检查更新开关；授权 |
 
 宠物、大小、活动范围、活跃程度、睡觉时间由桌宠窗口保存（localStorage），设置窗口和托盘只是发同样的指令、显示它上报的状态；
 显示器、全屏隐藏、省电保存在 `<应用配置目录>/settings.json`；开机自启用系统机制（macOS LaunchAgent / Windows 注册表启动项）。
@@ -109,6 +109,10 @@ cd src-tauri && cargo run -- --hatch-selftest http://127.0.0.1:8765/v1 images
 python3 tools/analyze-atlas.py <宠物目录>/spritesheet.png
 ```
 
+## 自动更新
+
+从 GitHub Releases 自动检查新版本，发现后提示，点「更新并重启」才安装；更新包有签名校验。发版流程、密钥和本地测试见 [docs/releasing.md](docs/releasing.md)。
+
 ## 结构
 
 ```
@@ -123,7 +127,9 @@ src-tauri/src/ai.rs     AI 接口配置、钥匙串、两种 OpenAI 协议调用
 src-tauri/src/hatch_run.rs  未完成孵化的存盘与恢复
 src/hatch.html / hatch.js / hatch-pipeline.js  孵化窗口与图像流水线
 src/settings.html / settings.js  设置窗口
-src-tauri/src/settings.rs  应用级设置（显示器、全屏隐藏、省电、开机自启）
+src-tauri/src/settings.rs  应用级设置（显示器、全屏隐藏、省电、开机自启、自动检查更新）
+src-tauri/src/update.rs    自动更新（检查、下载校验、安装重启）
+tools/release.py          发版脚本（改版本号、打包、上传、签名、发布 latest.json）
 tools/mock-image-api.py   离线测试用的模拟图像接口
 tools/presets/            预设宠物的绘制代码（rig.js 动作系统 + characters.js 角色）
 tools/build-presets.py    把预设渲染成 src-tauri/presets/ 下的宠物目录

@@ -260,6 +260,9 @@ listen("pet-installed", async ({ payload }) => {
     say(`${payload.replaced ? "更新" : "安装"}好了：${payload.displayName}`, 3);
   }
 });
+listen("update-available", ({ payload }) => {
+  say(`Perchy 有新版本 ${payload.version} 啦，在托盘菜单里更新`, 6);
+});
 listen("pet-install-failed", ({ payload }) => {
   showFace("shock", clock, 1.5);
   say(`装不上${payload.file ? " " + payload.file : ""}：${payload.error}`, 5);

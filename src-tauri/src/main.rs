@@ -15,6 +15,7 @@ mod pets;
 mod screens;
 mod settings;
 mod system;
+mod update;
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -226,9 +227,14 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         let checked = id == format!("zone:{}", ui.zone);
         zone.append(&CheckMenuItem::with_id(app, id, label, true, checked, None::<&str>)?)?;
     }
+    let update = match update::available_version(app) {
+        Some(v) => MenuItem::with_id(app, "update", format!("有新版本 {v}，查看更新…"), true, None::<&str>)?,
+        None => MenuItem::with_id(app, "update", "检查更新…", true, None::<&str>)?,
+    };
     Menu::with_items(
         app,
         &[
+            &update,
             &MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
             &switcher,
@@ -415,9 +421,18 @@ fn open_hatch<R: Runtime>(app: &AppHandle<R>, selftest: Option<serde_json::Value
     });
 }
 
-/// The settings window. Files dropped on it are installed like on the pet.
-fn open_settings<R: Runtime>(app: &AppHandle<R>) {
-    open_app_window(app, "settings", |b| {
+/// The settings window, optionally on a given page. Files dropped on it are
+/// installed like on the pet.
+fn open_settings<R: Runtime>(app: &AppHandle<R>, page: Option<&str>) {
+    if let (Some(page), Some(_)) = (page, app.get_webview_window("settings")) {
+        let _ = app.emit_to("settings", "settings-page", page);
+    }
+    let page = page.map(str::to_string);
+    open_app_window(app, "settings", move |b| {
+        let b = match page {
+            Some(p) => b.initialization_script(format!("window.__PERCHY_PAGE__ = {};", serde_json::json!(p))),
+            None => b,
+        };
         b.title("设置 · Perchy").inner_size(640.0, 720.0).min_inner_size(520.0, 480.0)
     });
 }
@@ -426,7 +441,7 @@ fn open_settings<R: Runtime>(app: &AppHandle<R>) {
 fn open_window(app: AppHandle, name: String) -> Result<(), String> {
     match name.as_str() {
         "hatch" => open_hatch(&app, None),
-        "settings" => open_settings(&app),
+        "settings" => open_settings(&app, None),
         "pets-dir" => open_pets_dir(&app),
         _ => return Err(format!("unknown window {name}")),
     }
@@ -456,6 +471,8 @@ fn main() {
             install_paths(app, paths);
         }))
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(update::UpdateState::default())
         .manage(PendingPet::default())
         .manage(PowerState::default())
         .manage(TrayState::default())
@@ -469,6 +486,9 @@ fn main() {
             open_window,
             settings::get_settings,
             settings::set_setting,
+            update::update_status,
+            update::update_check,
+            update::update_install,
             export_pet,
             hatch_run::hatch_put_image,
             hatch_run::hatch_put_meta,
@@ -541,7 +561,8 @@ fn main() {
                     "quit" => app.exit(0),
                     "open-pets-dir" => open_pets_dir(app),
                     "hatch" => open_hatch(app, None),
-                    "settings" => open_settings(app),
+                    "settings" => open_settings(app, None),
+                    "update" => open_settings(app, Some("about")),
                     id if id.starts_with("display:") => {
                         if let Some(window) = app.get_webview_window("main") {
                             screens::choose(&window, &id["display:".len()..]);
@@ -557,7 +578,7 @@ fn main() {
             let cwd = std::env::current_dir().unwrap_or_default();
             install_paths(app.handle(), path_args(std::env::args(), &cwd));
             if argv_has("--settings") {
-                open_settings(app.handle());
+                open_settings(app.handle(), None);
             }
             // `perchy --pet preset:qiqi` starts with (and remembers) that pet.
             let argv: Vec<String> = std::env::args().collect();
@@ -565,6 +586,7 @@ fn main() {
                 *app.state::<PendingPet>().0.lock().unwrap() = Some(key.clone());
             }
             watch(app.handle().clone());
+            update::start(app.handle().clone());
 
             // Dev: `perchy --hatch-selftest <base url> <images|chat> [transparent] [persist]` runs the
             // hatch flow end-to-end against a mock API (tools/mock-image-api.py).

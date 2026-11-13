@@ -33,12 +33,14 @@ function toast(text, bad = false) {
 }
 
 // ---------- navigation ----------
-for (const b of document.querySelectorAll("nav button")) {
-  b.onclick = () => {
-    for (const o of document.querySelectorAll("nav button")) o.classList.toggle("on", o === b);
-    for (const p of document.querySelectorAll("section.page")) p.hidden = p.id !== "page-" + b.dataset.page;
-  };
+function showPage(name) {
+  if (!document.getElementById("page-" + name)) return;
+  for (const o of document.querySelectorAll("nav button")) o.classList.toggle("on", o.dataset.page === name);
+  for (const p of document.querySelectorAll("section.page")) p.hidden = p.id !== "page-" + name;
 }
+for (const b of document.querySelectorAll("nav button")) b.onclick = () => showPage(b.dataset.page);
+if (window.__PERCHY_PAGE__) showPage(window.__PERCHY_PAGE__);
+listen("settings-page", ({ payload }) => showPage(payload));
 
 // ---------- small controls ----------
 function segmented(el, items, current, onPick) {
@@ -167,13 +169,14 @@ async function loadSettings() {
   $("hideFullscreen").checked = s.hideFullscreen;
   $("batterySaver").checked = s.batterySaver;
   $("autostart").checked = s.autostart;
+  $("autoUpdate").checked = s.autoUpdate;
   const sel = $("display");
   sel.replaceChildren(...s.displays.map((d) => Object.assign(document.createElement("option"), { value: d.key, textContent: d.label })));
   sel.value = s.currentDisplay ?? "";
   sel.disabled = s.displays.length < 2;
 }
 
-for (const id of ["hideFullscreen", "batterySaver", "autostart"]) {
+for (const id of ["hideFullscreen", "batterySaver", "autostart", "autoUpdate"]) {
   $(id).onchange = (e) => {
     invoke("set_setting", { name: id, value: e.target.checked }).catch((err) => {
       toast("设置失败：" + err, true);
@@ -184,6 +187,41 @@ for (const id of ["hideFullscreen", "batterySaver", "autostart"]) {
 $("display").onchange = (e) => invoke("set_setting", { name: "display", value: e.target.value }).then(loadSettings);
 $("hatch").onclick = () => invoke("open_window", { name: "hatch" });
 $("openDir").onclick = () => invoke("open_window", { name: "pets-dir" });
+
+// ---------- updates ----------
+function ago(sec) {
+  const d = Math.max(0, Date.now() / 1000 - sec);
+  if (d < 60) return "刚刚";
+  if (d < 3600) return `${Math.floor(d / 60)} 分钟前`;
+  if (d < 86400) return `${Math.floor(d / 3600)} 小时前`;
+  return `${Math.floor(d / 86400)} 天前`;
+}
+function renderUpdate(s) {
+  const a = s.available;
+  $("updState").textContent = s.installing ? "正在下载更新…" : s.checking ? "正在检查更新…"
+    : a ? `发现新版本 v${a.version}` : s.lastChecked ? `已是最新版本 v${s.current}` : `当前版本 v${s.current}`;
+  $("updDetail").textContent = s.lastError ? `出错了：${s.lastError}` : s.lastChecked ? `上次检查：${ago(s.lastChecked)}` : "";
+  $("updDetail").style.color = s.lastError ? "var(--bad)" : "";
+  $("updCheck").disabled = s.checking || s.installing;
+  $("updAvail").hidden = !a;
+  if (a) {
+    $("updVersion").textContent = `v${s.current} → v${a.version}`;
+    $("updDate").textContent = a.date ? `发布于 ${a.date}` : "";
+    $("updNotes").textContent = a.notes || "";
+    $("updInstall").disabled = s.installing;
+    $("updInstall").textContent = s.installing ? "正在更新…" : "更新并重启";
+  }
+  $("updProgress").hidden = !s.installing;
+}
+$("updCheck").onclick = () => invoke("update_check").then(renderUpdate).catch(() => {});
+$("updInstall").onclick = () => invoke("update_install").catch((e) => toast("更新失败：" + e, true));
+listen("update-status", ({ payload }) => renderUpdate(payload));
+listen("update-progress", ({ payload }) => {
+  const { downloaded, total } = payload;
+  $("updProgress").hidden = false;
+  $("updProgress").firstElementChild.style.width = total ? `${Math.min(100, (downloaded / total) * 100)}%` : "50%";
+});
+invoke("update_status").then(renderUpdate).catch(() => {});
 
 // ---------- live updates ----------
 listen("ui-state", ({ payload }) => { ui = payload; renderUi(); });
