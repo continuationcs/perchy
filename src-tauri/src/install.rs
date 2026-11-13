@@ -183,6 +183,14 @@ fn validate(dir: &Path) -> Result<(String, String), String> {
     if let Ok(text) = fs::read_to_string(dir.join("perchy.json")) {
         let ext: serde_json::Value =
             serde_json::from_str(&text).map_err(|e| format!("perchy.json 格式错误：{e}"))?;
+        if let Some(hd) = ext.get("hd").and_then(|v| v.as_str()) {
+            let bytes = fs::read(dir.join(hd)).ok().filter(|_| safe_rel(hd));
+            let size = bytes.as_deref().and_then(image_size);
+            let ok = size.is_some_and(|(hw, hh)| hw % w == 0 && hw / w >= 2 && hw / w <= 4 && hw * h == hh * w);
+            if !ok {
+                return Err(format!("perchy.json 的 hd 图集 {hd} 不存在，或不是主图集的 2–4 倍"));
+            }
+        }
         if let Some(states) = ext["states"].as_object() {
             for (name, state) in states {
                 if let Some(sheet) = state["sheet"].as_str() {
@@ -288,6 +296,22 @@ fn collect(root: &Path, dir: &Path, out: &mut Vec<PathBuf>, budget: &mut Budget)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundled_presets_are_valid() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("presets");
+        let mut ids = Vec::new();
+        for entry in fs::read_dir(&root).expect("src-tauri/presets missing") {
+            let dir = entry.unwrap().path();
+            if dir.is_dir() {
+                let (id, _) = validate(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
+                assert_eq!(dir.file_name().unwrap().to_str(), Some(id.as_str()));
+                ids.push(id);
+            }
+        }
+        ids.sort();
+        assert_eq!(ids, ["mianmian", "qiqi"]);
+    }
 
     #[test]
     fn png_and_webp_headers() {

@@ -5,6 +5,7 @@
 //! looked up in two roots:
 //!   - `perchy`: <app data>/pets            — pets installed into Perchy
 //!   - `codex`:  ${CODEX_HOME:-~/.codex}/pets — read in place, never modified
+//!   - `preset`: <resources>/presets          — shipped with the app, read-only
 //!
 //! The frontend addresses a pet by its key `"<source>:<dir name>"` and may only
 //! read files inside that pet's directory.
@@ -38,6 +39,9 @@ fn roots<R: Runtime>(app: &AppHandle<R>) -> Vec<(&'static str, PathBuf)> {
         .or_else(|| app.path().home_dir().ok().map(|h| h.join(".codex")));
     if let Some(home) = codex_home {
         roots.push(("codex", home.join("pets")));
+    }
+    if let Ok(res) = app.path().resource_dir() {
+        roots.push(("preset", res.join("presets")));
     }
     roots
 }

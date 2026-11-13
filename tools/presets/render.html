@@ -1,0 +1,64 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Perchy preset renderer</title>
+<!--
+  Renders every preset in characters.js into Codex v2 atlases.
+  Run through tools/build-presets.py (headless Chrome, --dump-dom); the
+  result is written into #out as one JSON line per file.
+  Open in a browser with ?preview to look at the sheets instead.
+-->
+<body style="background:#888">
+<pre id="out"></pre>
+<script>
+  window.onerror = (msg, src, line, col) => {
+    document.getElementById("out").textContent = JSON.stringify({ error: `${msg} @ ${String(src).split("/").pop()}:${line}:${col}` });
+  };
+</script>
+<script src="rig.js"></script>
+<script src="characters.js"></script>
+<script>
+// CELL_W, CELL_H, ROWS, rowPoses, lookPoses, drawFrame come from rig.js.
+const COLS = 8, ROWS_V2 = 11;
+
+function atlas(ch, k) {
+  const c = document.createElement("canvas");
+  c.width = CELL_W * COLS * k; c.height = CELL_H * ROWS_V2 * k;
+  const g = c.getContext("2d");
+  const cell = (row, col, pose, mirror) => {
+    g.save();
+    g.translate(col * CELL_W * k, row * CELL_H * k);
+    g.scale(k, k);
+    g.beginPath(); g.rect(0, 0, CELL_W, CELL_H); g.clip();
+    if (mirror) { g.translate(CELL_W, 0); g.scale(-1, 1); }
+    drawFrame(g, ch, pose);
+    g.restore();
+  };
+  ROWS.forEach(([name, n], row) => {
+    const src = name === "running-left" ? "running-right" : name;
+    rowPoses(src, n).forEach((pose, col) => cell(row, col, pose, name === "running-left"));
+  });
+  lookPoses().forEach((pose, i) => cell(9 + (i >> 3), i % 8, pose, false));
+  return c;
+}
+
+const out = [];
+const preview = location.search.includes("preview");
+const only = new URLSearchParams(location.search).get("only");
+for (const ch of PRESETS) {
+  if (only && ch.id !== only) continue;
+  const hd = atlas(ch, 2);
+  if (preview) { hd.style.cssText = "width:1536px;display:block;margin:8px"; document.body.append(hd); continue; }
+  // 1× atlas is a high-quality downscale of the 2× one.
+  const sd = document.createElement("canvas");
+  sd.width = CELL_W * COLS; sd.height = CELL_H * ROWS_V2;
+  const sg = sd.getContext("2d");
+  sg.imageSmoothingEnabled = true; sg.imageSmoothingQuality = "high";
+  sg.drawImage(hd, 0, 0, sd.width, sd.height);
+  out.push(JSON.stringify({ id: ch.id, file: "spritesheet.webp", data: sd.toDataURL("image/webp", 0.92) }));
+  out.push(JSON.stringify({ id: ch.id, file: "spritesheet@2x.webp", data: hd.toDataURL("image/webp", 0.9) }));
+  out.push(JSON.stringify({ id: ch.id, file: "preview.png", data: sd.toDataURL("image/png") }));
+  out.push(JSON.stringify({ id: ch.id, meta: { displayName: ch.displayName, description: ch.description } }));
+}
+document.getElementById("out").textContent = out.join("\n");
+</script>
+</body>

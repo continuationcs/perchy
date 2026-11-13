@@ -27,7 +27,24 @@ cargo run
 ## 宠物
 
 宠物包格式见 [docs/pet-format.md](docs/pet-format.md)：**Codex v2 宠物包 + 可选 `perchy.json` 扩展**。
-启动时自动发现 `~/.codex/pets/` 下的 Codex 宠物和 Perchy 自己的 pets 目录，托盘「换宠物」切换，选择会被记住。
+启动时自动发现 `~/.codex/pets/` 下的 Codex 宠物、Perchy 自己的 pets 目录和随应用附带的预设宠物，托盘「换宠物」切换，选择会被记住。
+首次启动时，有已安装的宠物（例如 Codex 宠物）就先用它，否则用看板娘栖栖。`cargo run -- --pet preset:qiqi` 可指定启动宠物。
+
+### 预设宠物
+
+| id | 名字 | 形象 |
+|---|---|---|
+| `qiqi` | 栖栖 | Q 版二次元少女，看板娘，头上停着一只小黄鸟 |
+| `mianmian` | 棉棉 | 蓝眼睛的布偶猫 |
+
+都是原创形象，用代码程序化绘制（[tools/presets/](tools/presets/)），渲染成标准 Codex v2 图集，另附 2× 高清图集（`perchy.json` 的 `hd`），所以既能在 Codex 里用，也能在 Perchy 里高清显示。
+改了绘制代码后重新生成（需要本机装有 Chrome / Edge，用无头模式渲染）：
+
+```bash
+python3 tools/build-presets.py
+```
+
+输出到 `src-tauri/presets/<id>/`，随应用打包为资源；只读，不会被安装或覆盖。
 
 分享用单文件 `.pet`（即 zip）。安装：拖到宠物身上、双击 `.pet`（需打包后的 .app），或 `cargo run -- my.pet`。
 
@@ -83,7 +100,7 @@ python3 tools/analyze-atlas.py <宠物目录>/spritesheet.png
 ```
 src/                 前端（纯静态，无打包器）
   main.js            状态机、物理、命中检测、渲染循环
-  cat.js             内置程序化形象「团子猫」
+  cat.js             内置程序化形象「团团」
   sprite.js          Codex 图集 + perchy.json 扩展的精灵图渲染器
 src-tauri/src/main.rs  覆盖工作区的透明窗口、托盘、cursor_local / set_passthrough
 src-tauri/src/pets.rs  宠物发现（list_pets）与限定在宠物目录内的文件读取（read_pet_file）
@@ -92,6 +109,8 @@ src-tauri/src/ai.rs     AI 接口配置、钥匙串、两种 OpenAI 协议调用
 src-tauri/src/hatch_run.rs  未完成孵化的存盘与恢复
 src/hatch.html / hatch.js / hatch-pipeline.js  孵化窗口与图像流水线
 tools/mock-image-api.py   离线测试用的模拟图像接口
+tools/presets/            预设宠物的绘制代码（rig.js 动作系统 + characters.js 角色）
+tools/build-presets.py    把预设渲染成 src-tauri/presets/ 下的宠物目录
 ```
 
 ## 点击穿透原理
@@ -118,5 +137,5 @@ tools/mock-image-api.py   离线测试用的模拟图像接口
 ## 授权
 
 - 代码：[MIT](LICENSE)
-- 预设宠物素材（图片、音效）：[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+- 预设宠物素材（`src-tauri/presets/` 下的图片，以及生成它们的 `tools/presets/` 绘制代码所画出的形象）：[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，署名「Perchy contributors」
 - 参与开发见 [CONTRIBUTING.md](CONTRIBUTING.md)

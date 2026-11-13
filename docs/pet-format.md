@@ -91,6 +91,7 @@ PNG 或 WebP，透明背景。行定义：
   "tags": ["猫", "像素风"],
   "scale": 0.6,
   "anchor": [96, 200],
+  "hd": "spritesheet@2x.webp",
   "states": {
     "sleep": { "sheet": "extra/sleep.webp", "cell": [192, 208], "frames": 6, "fps": 3 },
     "held":  { "row": 6, "frames": 6, "durations": [150, 150, 150, 150, 150, 260] },
@@ -107,6 +108,7 @@ PNG 或 WebP，透明背景。行定义：
 | `author` / `license` / `tags` | 工坊元数据；发布到工坊时 `license` 必填 | — |
 | `scale` | 屏幕显示缩放 | 自动：可见身体高约 120px |
 | `anchor` | 脚底锚点（单元格像素坐标） | 自动：idle 首帧不透明区域的水平中心 + 最低行 |
+| `hd` | 主图集的高清版（布局相同，宽高都是 2–4 的整数倍），Perchy 在高分屏上用它绘制；Codex 忽略，仍用主图集 | — |
 | `states.<name>` | 新增或覆盖一个动画状态 | — |
 | `lines` / `sounds` | 台词气泡 / 音效（**预留，尚未实现**） | — |
 

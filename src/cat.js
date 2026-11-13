@@ -1,4 +1,4 @@
-// Procedural placeholder pet ("团子猫"). Draws into a small sprite buffer with
+// Procedural placeholder pet ("团团"). Draws into a small sprite buffer with
 // its feet at the origin. Later this is replaced by sprite sheets loaded from
 // a .pet package; the runner only needs drawPet(g, pet, t) to fill the buffer.
 
@@ -143,7 +143,7 @@ function drawPet(g, p, t) {
 //   width / height  visual size, used for particles, shadow and ceiling
 //   draw(g, pet, t) draws with the feet at the origin
 window.builtinRenderer = {
-  name: "团子猫",
+  name: "团团",
   S: 180, FOOT: 24, width: 70, height: 110,
   draw: drawPet,
 };

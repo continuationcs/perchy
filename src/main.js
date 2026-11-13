@@ -176,7 +176,7 @@ listen("tray", ({ payload }) => {
   } else if (payload.startsWith("pet:")) {
     usePet(payload.slice(4));
   } else if (payload === "export") {
-    if (petKey === "builtin") { say("内置的团子猫不能导出，换一只宠物再试", 3); return; }
+    if (petKey === "builtin") { say("内置的团团不能导出，换一只宠物再试", 3); return; }
     invoke("export_pet", { key: petKey })
       .then((name) => say(`已导出到「下载」：${name}`, 4))
       .catch((e) => say("导出失败：" + e, 5));
@@ -489,7 +489,10 @@ requestAnimationFrame(frame);
   console.info("[perchy] pets found:", pets.map((p) => p.key).join(", ") || "(none)");
   // A pet just installed by double-clicking a .pet wins.
   const pending = await invoke("take_pending_pet").catch(() => null);
-  const first = pending ?? saved ?? (pets[0] ? pets[0].key : "builtin");
+  // First run: a pet the user already has (e.g. from Codex), else the mascot.
+  const own = pets.find((p) => p.source !== "preset");
+  const mascot = pets.find((p) => p.key === "preset:qiqi");
+  const first = pending ?? saved ?? (own ?? mascot ?? pets[0])?.key ?? "builtin";
   // If the remembered pet is gone, fall back to an installed one, then the cat.
   if (first !== "builtin" && !(await usePet(first))) {
     const other = pets.find((p) => p.key !== first);

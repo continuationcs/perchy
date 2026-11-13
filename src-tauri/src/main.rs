@@ -154,13 +154,17 @@ fn watch<R: Runtime>(app: AppHandle<R>) {
 /// Tray menu; rebuilt whenever a pet is installed so "换宠物" stays current.
 fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     // "换宠物" lists the built-in cat plus every pet found on disk
-    // (Perchy's own pets dir and the user's Codex pets).
+    // (Perchy's own pets dir, the user's Codex pets and the bundled presets).
     let ui = app.try_state::<TrayState>().map(|s| s.0.lock().unwrap().clone()).unwrap_or_default();
     let switcher = Submenu::with_id(app, "pets", "换宠物", true)?;
     let on = |key: &str| ui.pet == key;
-    switcher.append(&CheckMenuItem::with_id(app, "pet:builtin", "团子猫（内置）", true, on("builtin"), None::<&str>)?)?;
+    switcher.append(&CheckMenuItem::with_id(app, "pet:builtin", "团团（内置）", true, on("builtin"), None::<&str>)?)?;
     for pet in pets::list(app) {
-        let tag = if pet.source == "codex" { " · Codex" } else { "" };
+        let tag = match pet.source {
+            "codex" => " · Codex",
+            "preset" => " · 预设",
+            _ => "",
+        };
         let label = format!("{}{}", pet.display_name, tag);
         switcher.append(&CheckMenuItem::with_id(app, format!("pet:{}", pet.key), label, true, on(&pet.key), None::<&str>)?)?;
     }
@@ -468,6 +472,11 @@ fn main() {
 
             let cwd = std::env::current_dir().unwrap_or_default();
             install_paths(app.handle(), path_args(std::env::args(), &cwd));
+            // `perchy --pet preset:qiqi` starts with (and remembers) that pet.
+            let argv: Vec<String> = std::env::args().collect();
+            if let Some(key) = argv.iter().position(|a| a == "--pet").and_then(|i| argv.get(i + 1)) {
+                *app.state::<PendingPet>().0.lock().unwrap() = Some(key.clone());
+            }
             watch(app.handle().clone());
 
             // Dev: `perchy --hatch-selftest <base url> <images|chat> [transparent] [persist]` runs the

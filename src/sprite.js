@@ -83,6 +83,18 @@ async function loadSpritePet(entry) {
     }
   }
 
+  // Optional HD copy of the main atlas (same layout, 2–4× the pixels) for
+  // HiDPI screens; Codex ignores it and keeps using the 1× atlas.
+  let hd = null, hk = 1;
+  if (ext?.hd) {
+    try {
+      const img = await petImage(key, ext.hd);
+      const k = img.width / atlas.width;
+      if (Number.isInteger(k) && k >= 2 && k <= 4 && img.height === atlas.height * k) { hd = img; hk = k; }
+      else console.warn(`[perchy] ${ext.hd} is ${img.width}×${img.height}, not 2–4× the atlas; ignored`);
+    } catch (e) { console.warn("[perchy] hd atlas:", e); }
+  }
+
   const box = autoAnchor(atlas, cw, ch);
   const anchor = ext?.anchor ? { x: ext.anchor[0], y: ext.anchor[1] } : box;
   // Default: scale so the visible body is ~120 px tall on screen.
@@ -143,7 +155,9 @@ async function loadSpritePet(entry) {
     if (p.state === "land" && !has("land")) { const k = Math.max(0, 1 - p.stateT / 0.28); sqy = 1 - 0.15 * k; sqx = 1 + 0.12 * k; }
     g.save();
     g.scale(sqx, sqy);
-    g.drawImage(img, sx, sy, scw, sch, -ax * scale, -ay * scale, scw * scale, sch * scale);
+    g.imageSmoothingQuality = "high";
+    if (img === atlas && hd) g.drawImage(hd, sx * hk, sy * hk, scw * hk, sch * hk, -ax * scale, -ay * scale, scw * scale, sch * scale);
+    else g.drawImage(img, sx, sy, scw, sch, -ax * scale, -ay * scale, scw * scale, sch * scale);
     g.restore();
   }
 
