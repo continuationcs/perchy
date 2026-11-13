@@ -112,7 +112,7 @@ tools/mock-image-api.py   离线测试用的模拟图像接口
 ## 已知局限
 
 - AI 孵化只用模拟接口跑通过全流程，未用真实模型测过；真实模型的网格排布、抠图质量需要实测调整提示词。
-- Windows 只做过交叉编译类型检查（`cargo check --target x86_64-pc-windows-msvc`），未在真机运行。
+- Windows 只做过交叉编译类型检查（真机测试步骤见 [docs/testing-windows.md](docs/testing-windows.md)）（`cargo check --target x86_64-pc-windows-msvc`），未在真机运行。
 - 跨屏拖拽、多显示器、不抢焦点后的点击/拖拽手感未实测（本机单屏、无法模拟鼠标）。
 - 每帧一次 IPC 轮询光标，后续可改为 Rust 侧推送并在原生层直接做命中检测。
 
