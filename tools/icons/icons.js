@@ -136,7 +136,7 @@ function shellChick(id, o) {
 
 const SHELL_TRAY = CONCEPTS_TRAY_D();
 function CONCEPTS_TRAY_D() {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M18 17 C 20 10 30 8 36 10 C 42 12 45 17 44 20 L41 18 L38 21 L35 18 L32 21 L29 18 L26 21 L23 18 Z" fill="#000" transform="rotate(22 31 15) translate(7 -5) scale(.9)"/><path d="M27 20 C 23 13 30 11 29 17" fill="none" stroke="#000" stroke-width="2.6" stroke-linecap="round"/><path d="M32 20 C 41 20 47 26 47 33 L47 35 L15 35 L15 33 C 15 26 23 20 32 20 Z M26 29 a2.6 2.6 0 1 0 0.01 0 Z M38 29 a2.6 2.6 0 1 0 0.01 0 Z" fill="#000" fill-rule="evenodd"/><path d="M12 37 L17 34 L21 38 L26 34 L32 38 L38 34 L43 38 L47 34 L52 37 C 53 50 44 58 32 58 C 20 58 11 50 12 37 Z" fill="#000"/></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M18 17 C 20 10 30 8 36 10 C 42 12 45 17 44 20 L41 18 L38 21 L35 18 L32 21 L29 18 L26 21 L23 18 Z" fill="#000" transform="rotate(-18 31 15) translate(-2 -4)"/><path d="M30 20 C 27 13 33 12 32 17" fill="none" stroke="#000" stroke-width="2.6" stroke-linecap="round"/><path d="M32 20 C 41 20 47 26 47 33 L47 35 L15 35 L15 33 C 15 26 23 20 32 20 Z M26 29 a2.6 2.6 0 1 0 0.01 0 Z M38 29 a2.6 2.6 0 1 0 0.01 0 Z" fill="#000" fill-rule="evenodd"/><path d="M12 37 L17 34 L21 38 L26 34 L32 38 L38 34 L43 38 L47 34 L52 37 C 53 50 44 58 32 58 C 20 58 11 50 12 37 Z" fill="#000"/></svg>`;
 }
 
 CONCEPTS.push(
@@ -206,6 +206,63 @@ CONCEPTS.push({
       <path d="M716 306 L686 284 L656 310 L624 284 L592 310 L560 284 L528 310 L498 284 L468 306" fill="none" stroke="#d9bb8f" stroke-width="10" stroke-linejoin="round"/>
       <ellipse cx="560" cy="200" rx="12" ry="9" fill="#e3c7a0" opacity=".75"/><ellipse cx="640" cy="236" rx="13" ry="10" fill="#e3c7a0" opacity=".75"/>
       <ellipse cx="520" cy="250" rx="9" ry="7" fill="#e3c7a0" opacity=".75"/>
+    </g>`),
+  tray: SHELL_TRAY,
+});
+
+// ---- Closer to the tray glyph: low dome head (eyes right at the rim),
+// the lid perched like a little umbrella on the tuft. ----
+CONCEPTS.push({
+  id: "final2",
+  name: "正式图标 · 贴近单色版",
+  note: "完全照单色剪影来：脑袋只露出半圆和眼睛，呆毛像伞柄撑着小壳盖。",
+  icon: frame("g", ["#ffd6a8", "#ff935a"], `
+    <defs>
+      <radialGradient id="ghd" cx=".4" cy=".3" r=".85"><stop offset="0" stop-color="#fff3a8"/><stop offset=".6" stop-color="#ffd23f"/><stop offset="1" stop-color="#f0a01a"/></radialGradient>
+      <linearGradient id="gshell" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fffdf7"/><stop offset="1" stop-color="#ead2ae"/></linearGradient>
+    </defs>
+    <path d="M512 400 C 498 350 512 312 548 296" fill="none" stroke="#f0a01a" stroke-width="22" stroke-linecap="round"/>
+    <ellipse cx="512" cy="600" rx="250" ry="210" fill="url(#ghd)"/>
+    ${eye(430, 548, 34)}${eye(594, 548, 34)}
+    ${cheek(372, 594)}${cheek(652, 594)}
+    <path d="M220 610 L280 566 L340 622 L404 566 L466 622 L512 576 L558 622 L620 566 L684 622 L744 566 L804 610 C 812 780 690 872 512 872 C 334 872 212 780 220 610 Z" fill="url(#gshell)"/>
+    <path d="M220 610 L280 566 L340 622 L404 566 L466 622 L512 576 L558 622 L620 566 L684 622 L744 566 L804 610" fill="none" stroke="#d9bb8f" stroke-width="12" stroke-linejoin="round"/>
+    <ellipse cx="330" cy="716" rx="15" ry="11" fill="#e3c7a0" opacity=".75"/><ellipse cx="470" cy="800" rx="13" ry="10" fill="#e3c7a0" opacity=".75"/>
+    <ellipse cx="650" cy="736" rx="15" ry="11" fill="#e3c7a0" opacity=".75"/><ellipse cx="740" cy="670" rx="10" ry="8" fill="#e3c7a0" opacity=".75"/>
+    <g transform="rotate(20 566 236)">
+      <path d="M436 306 C 436 196 508 140 566 140 C 624 140 696 196 696 306 L664 284 L632 310 L598 284 L566 310 L534 284 L500 310 L468 284 Z" fill="url(#gshell)"/>
+      <path d="M696 306 L664 284 L632 310 L598 284 L566 310 L534 284 L500 310 L468 284 L436 306" fill="none" stroke="#d9bb8f" stroke-width="10" stroke-linejoin="round"/>
+      <ellipse cx="530" cy="196" rx="12" ry="9" fill="#e3c7a0" opacity=".75"/><ellipse cx="616" cy="232" rx="13" ry="10" fill="#e3c7a0" opacity=".75"/>
+    </g>`),
+  tray: SHELL_TRAY,
+});
+
+// ---- The tray glyph, coloured: same paths scaled ×13 around the centre,
+// each part filled on its own. ----
+CONCEPTS.push({
+  id: "final3",
+  name: "正式图标 · 单色版上色",
+  note: "直接用菜单栏单色图的路径放大上色：形状、位置、角度和单色版完全一致。",
+  icon: frame("h", ["#ffd6a8", "#ff935a"], `
+    <defs>
+      <radialGradient id="hhd" cx=".4" cy=".25" r=".9"><stop offset="0" stop-color="#fff3a8"/><stop offset=".6" stop-color="#ffd23f"/><stop offset="1" stop-color="#f0a01a"/></radialGradient>
+      <linearGradient id="hshell" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fffdf7"/><stop offset="1" stop-color="#e8cfa8"/></linearGradient>
+    </defs>
+    <g transform="translate(512 506) scale(13) translate(-32 -32)">
+      <path d="M15 33.5 L47 33.5 L47 39 L15 39 Z" fill="#a8774c"/>
+      <path d="M30 20 C 27 13 33 12 32 17" fill="none" stroke="#f0a01a" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M32 20 C 41 20 47 26 47 33 L47 35 L15 35 L15 33 C 15 26 23 20 32 20 Z" fill="url(#hhd)"/>
+      <circle cx="26" cy="30.9" r="2.7" fill="#2b1d14"/><circle cx="25.1" cy="29.9" r=".9" fill="#fff"/>
+      <circle cx="38" cy="30.9" r="2.7" fill="#2b1d14"/><circle cx="37.1" cy="29.9" r=".9" fill="#fff"/>
+      <path d="M12 37 L17 34 L21 38 L26 34 L32 38 L38 34 L43 38 L47 34 L52 37 C 53 50 44 58 32 58 C 20 58 11 50 12 37 Z" fill="url(#hshell)"/>
+      <path d="M12 37 L17 34 L21 38 L26 34 L32 38 L38 34 L43 38 L47 34 L52 37" fill="none" stroke="#d6b68a" stroke-width=".8" stroke-linejoin="round"/>
+      <ellipse cx="20" cy="45" rx="1.1" ry=".8" fill="#e0c39a"/><ellipse cx="29" cy="52" rx="1" ry=".75" fill="#e0c39a"/>
+      <ellipse cx="42" cy="47" rx="1.1" ry=".8" fill="#e0c39a"/><ellipse cx="36" cy="42" rx=".8" ry=".6" fill="#e0c39a"/>
+      <g transform="rotate(-18 31 15) translate(-2 -4)">
+        <path d="M18 17 C 20 10 30 8 36 10 C 42 12 45 17 44 20 L41 18 L38 21 L35 18 L32 21 L29 18 L26 21 L23 18 Z" fill="url(#hshell)"/>
+        <path d="M44 20 L41 18 L38 21 L35 18 L32 21 L29 18 L26 21 L23 18 L18 17" fill="none" stroke="#d6b68a" stroke-width=".8" stroke-linejoin="round"/>
+        <ellipse cx="27" cy="13" rx=".9" ry=".7" fill="#e0c39a"/><ellipse cx="36" cy="14" rx="1" ry=".75" fill="#e0c39a"/>
+      </g>
     </g>`),
   tray: SHELL_TRAY,
 });
