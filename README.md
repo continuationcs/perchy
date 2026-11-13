@@ -21,8 +21,22 @@ cargo run
 | 拖动后甩出去 | 带速度飞出，重力、撞墙反弹、落地压扁 |
 | 鼠标在它身上来回蹭 | 被撸 → 脸红 + 爱心 |
 | 鼠标靠近 | 眼睛跟着鼠标 |
-| 45 秒没理它 | 可能睡着（Zzz） |
-| 托盘菜单 | 把它叫回来 / 哄它睡觉 / 大小（小～超大，按宠物记住）/ 活动范围 / 导出当前宠物为 .pet（存到「下载」） |
+| 一段时间没理它（默认 45 秒，可在设置里改） | 可能睡着（Zzz） |
+| 托盘菜单 | 设置… / 换宠物 / 大小（小～超大，按宠物记住）/ 活动范围 / 显示器 / 导出当前宠物为 .pet（存到「下载」）/ 把它叫回来 / 哄它睡觉 |
+
+## 设置
+
+托盘「设置…」打开设置窗口（开发时可用 `cargo run -- --settings` 直接打开）：
+
+| 页 | 内容 |
+|---|---|
+| 宠物 | 带缩略图的宠物列表，点击切换，悬停可导出；孵化新宠物；打开宠物文件夹；大小。把 .pet / .zip / 宠物文件夹拖进窗口即安装 |
+| 行为 | 活动范围；活跃程度（安静 / 正常 / 活泼）；自动睡觉（20 秒～5 分钟 / 从不） |
+| 系统 | 显示器；全屏时自动隐藏；开机自动启动；用电池时省电（30 帧） |
+| 关于 | 版本与授权 |
+
+宠物、大小、活动范围、活跃程度、睡觉时间由桌宠窗口保存（localStorage），设置窗口和托盘只是发同样的指令、显示它上报的状态；
+显示器、全屏隐藏、省电保存在 `<应用配置目录>/settings.json`；开机自启用系统机制（macOS LaunchAgent / Windows 注册表启动项）。
 
 ## 宠物
 
@@ -108,6 +122,8 @@ src-tauri/src/install.rs  .pet / .zip / 目录的校验与安装
 src-tauri/src/ai.rs     AI 接口配置、钥匙串、两种 OpenAI 协议调用
 src-tauri/src/hatch_run.rs  未完成孵化的存盘与恢复
 src/hatch.html / hatch.js / hatch-pipeline.js  孵化窗口与图像流水线
+src/settings.html / settings.js  设置窗口
+src-tauri/src/settings.rs  应用级设置（显示器、全屏隐藏、省电、开机自启）
 tools/mock-image-api.py   离线测试用的模拟图像接口
 tools/presets/            预设宠物的绘制代码（rig.js 动作系统 + characters.js 角色）
 tools/build-presets.py    把预设渲染成 src-tauri/presets/ 下的宠物目录

@@ -13,6 +13,7 @@ mod hatch_run;
 mod install;
 mod pets;
 mod screens;
+mod settings;
 mod system;
 
 use serde::Serialize;
@@ -69,19 +70,29 @@ fn power_state(state: State<PowerState>) -> Power {
 /// What the overlay currently shows, so the tray can tick the right items.
 /// The frontend owns these choices (they're remembered per pet) and reports
 /// every change through `report_ui_state`.
-#[derive(Default, Clone, PartialEq)]
+#[derive(Default, Clone, PartialEq, Serialize)]
 struct UiState {
     pet: String,
     size: String,
     zone: String,
+    activity: String,
+    sleep: String,
 }
 
 #[derive(Default)]
 struct TrayState(Mutex<UiState>);
 
 #[tauri::command]
-fn report_ui_state(app: AppHandle, state: State<TrayState>, pet: String, size: String, zone: String) {
-    let next = UiState { pet, size, zone };
+fn report_ui_state(
+    app: AppHandle,
+    state: State<TrayState>,
+    pet: String,
+    size: String,
+    zone: String,
+    activity: String,
+    sleep: String,
+) {
+    let next = UiState { pet, size, zone, activity, sleep };
     let changed = {
         let mut cur = state.0.lock().unwrap();
         let changed = *cur != next;
@@ -90,8 +101,29 @@ fn report_ui_state(app: AppHandle, state: State<TrayState>, pet: String, size: S
     };
     if changed {
         let ui = state.0.lock().unwrap().clone();
-        println!("[perchy] tray state: pet={} size={} zone={}", ui.pet, ui.size, ui.zone);
+        println!(
+            "[perchy] ui state: pet={} size={} zone={} activity={} sleep={}",
+            ui.pet, ui.size, ui.zone, ui.activity, ui.sleep
+        );
         refresh_tray(&app);
+        let _ = app.emit("ui-state", ui);
+    }
+}
+
+/// Current overlay choices, for the settings window.
+#[tauri::command]
+fn ui_state(state: State<TrayState>) -> UiState {
+    state.0.lock().unwrap().clone()
+}
+
+/// Re-read the power source now (e.g. after toggling the battery saver).
+fn refresh_power<R: Runtime>(app: &AppHandle<R>) {
+    let battery = settings::get(app).battery_saver && system::on_battery();
+    let state = app.state::<PowerState>();
+    let mut power = state.0.lock().unwrap();
+    if power.battery != battery {
+        power.battery = battery;
+        let _ = app.emit("power", power.clone());
     }
 }
 
@@ -122,8 +154,9 @@ fn watch<R: Runtime>(app: AppHandle<R>) {
                     let z = window.outer_size().ok()?;
                     Some((p.x as f64 / s, p.y as f64 / s, z.width as f64 / s, z.height as f64 / s))
                 })();
-                let fullscreen = rect.is_some_and(system::fullscreen_app_on);
-                let battery = (tick % 30 == 0).then(system::on_battery);
+                let prefs = settings::get(&app);
+                let fullscreen = prefs.hide_fullscreen && rect.is_some_and(system::fullscreen_app_on);
+                let battery = (tick % 30 == 0).then(|| prefs.battery_saver && system::on_battery());
 
                 let state = app.state::<PowerState>();
                 let mut power = state.0.lock().unwrap();
@@ -196,6 +229,8 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     Menu::with_items(
         app,
         &[
+            &MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?,
+            &PredefinedMenuItem::separator(app)?,
             &switcher,
             &size,
             &zone,
@@ -340,34 +375,66 @@ fn app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     Menu::with_items(app, &[&perchy, &edit, &window])
 }
 
-/// The "孵化新宠物" window (a normal, focusable app window).
-fn open_hatch<R: Runtime>(app: &AppHandle<R>, selftest: Option<serde_json::Value>) {
-    if let Some(w) = app.get_webview_window("hatch") {
+/// Normal, focusable app windows (as opposed to the pet overlay).
+const APP_WINDOWS: [&str; 2] = ["hatch", "settings"];
+
+/// Show the window `label` if it exists, otherwise build it with `make`.
+fn open_app_window<R: Runtime>(
+    app: &AppHandle<R>,
+    label: &str,
+    make: impl FnOnce(WebviewWindowBuilder<'_, R, AppHandle<R>>) -> WebviewWindowBuilder<'_, R, AppHandle<R>>,
+) {
+    if let Some(w) = app.get_webview_window(label) {
+        let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
         return;
     }
-    // While it is open, show Perchy in the Dock / app switcher like a normal app.
+    // While one is open, show Perchy in the Dock / app switcher like a normal app.
     #[cfg(target_os = "macos")]
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-    let mut builder = WebviewWindowBuilder::new(app, "hatch", WebviewUrl::App("hatch.html".into()))
-        // Let the page receive HTML5 file drops (reference image) instead of
-        // the native handler.
-        .disable_drag_drop_handler();
-    if let Some(cfg) = selftest {
-        builder = builder.initialization_script(format!("window.__PERCHY_SELFTEST__ = {cfg};"));
-    }
-    match builder
-        .title("孵化新宠物 · Perchy")
-        .inner_size(1040.0, 780.0)
-        .min_inner_size(820.0, 600.0)
-        .build()
-    {
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(format!("{label}.html").into()));
+    match make(builder).build() {
         Ok(w) => {
             let _ = w.set_focus();
         }
-        Err(e) => eprintln!("[perchy] cannot open hatch window: {e}"),
+        Err(e) => eprintln!("[perchy] cannot open {label} window: {e}"),
     }
+}
+
+/// The "孵化新宠物" window.
+fn open_hatch<R: Runtime>(app: &AppHandle<R>, selftest: Option<serde_json::Value>) {
+    open_app_window(app, "hatch", |b| {
+        // Let the page receive HTML5 file drops (reference image) instead of
+        // the native handler.
+        let mut b = b.disable_drag_drop_handler();
+        if let Some(cfg) = selftest {
+            b = b.initialization_script(format!("window.__PERCHY_SELFTEST__ = {cfg};"));
+        }
+        b.title("孵化新宠物 · Perchy").inner_size(1040.0, 780.0).min_inner_size(820.0, 600.0)
+    });
+}
+
+/// The settings window. Files dropped on it are installed like on the pet.
+fn open_settings<R: Runtime>(app: &AppHandle<R>) {
+    open_app_window(app, "settings", |b| {
+        b.title("设置 · Perchy").inner_size(640.0, 720.0).min_inner_size(520.0, 480.0)
+    });
+}
+
+#[tauri::command]
+fn open_window(app: AppHandle, name: String) -> Result<(), String> {
+    match name.as_str() {
+        "hatch" => open_hatch(&app, None),
+        "settings" => open_settings(&app),
+        "pets-dir" => open_pets_dir(&app),
+        _ => return Err(format!("unknown window {name}")),
+    }
+    Ok(())
+}
+
+fn argv_has(flag: &str) -> bool {
+    std::env::args().any(|a| a == flag)
 }
 
 /// File arguments (Windows/Linux file association, or `perchy my.pet`).
@@ -388,6 +455,7 @@ fn main() {
             let paths = path_args(argv, Path::new(&cwd));
             install_paths(app, paths);
         }))
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .manage(PendingPet::default())
         .manage(PowerState::default())
         .manage(TrayState::default())
@@ -397,6 +465,10 @@ fn main() {
             log,
             take_pending_pet,
             report_ui_state,
+            ui_state,
+            open_window,
+            settings::get_settings,
+            settings::set_setting,
             export_pet,
             hatch_run::hatch_put_image,
             hatch_run::hatch_put_meta,
@@ -413,9 +485,18 @@ fn main() {
             pets::read_pet_file
         ])
         .on_window_event(|window, event| {
+            // Back to a menu-bar-only app once the last app window closes.
             #[cfg(target_os = "macos")]
-            if window.label() == "hatch" && matches!(event, WindowEvent::Destroyed) {
-                let _ = window.app_handle().set_activation_policy(tauri::ActivationPolicy::Accessory);
+            if APP_WINDOWS.contains(&window.label()) && matches!(event, WindowEvent::Destroyed) {
+                let app = window.app_handle();
+                let others = APP_WINDOWS.iter().any(|l| *l != window.label() && app.get_webview_window(l).is_some());
+                if !others {
+                    let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                }
+            }
+            // Files dropped on the settings window are installed.
+            if let (WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }), "settings") = (event, window.label()) {
+                install_paths(window.app_handle(), paths.clone());
             }
             // Drops only reach us while the cursor is over the pet (elsewhere
             // the window is click-through), so this is "feeding" it a file.
@@ -444,6 +525,8 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_menu(app_menu(app.handle())?)?;
 
+            settings::init(app.handle());
+
             let window = app.get_webview_window("main").expect("main window");
             screens::ensure_placement(&window);
             window.set_ignore_cursor_events(true)?;
@@ -458,6 +541,7 @@ fn main() {
                     "quit" => app.exit(0),
                     "open-pets-dir" => open_pets_dir(app),
                     "hatch" => open_hatch(app, None),
+                    "settings" => open_settings(app),
                     id if id.starts_with("display:") => {
                         if let Some(window) = app.get_webview_window("main") {
                             screens::choose(&window, &id["display:".len()..]);
@@ -472,6 +556,9 @@ fn main() {
 
             let cwd = std::env::current_dir().unwrap_or_default();
             install_paths(app.handle(), path_args(std::env::args(), &cwd));
+            if argv_has("--settings") {
+                open_settings(app.handle());
+            }
             // `perchy --pet preset:qiqi` starts with (and remembers) that pet.
             let argv: Vec<String> = std::env::args().collect();
             if let Some(key) = argv.iter().position(|a| a == "--pet").and_then(|i| argv.get(i + 1)) {

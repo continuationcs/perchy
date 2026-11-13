@@ -34,7 +34,23 @@ function resize() {
 
 const GRAVITY = 2600;    // px/s²
 const WALK_SPEED = 70;   // px/s
-const SLEEP_AFTER = 45;  // s without interaction
+
+// Behaviour preferences (settings window 「行为」).
+//   activity: how often the pet decides to wander off
+//   sleep:    seconds without interaction before it may doze off (0 = never)
+const ACTIVITY = {
+  quiet:  { walk: 0.3, pause: [4, 9] },
+  normal: { walk: 0.6, pause: [2, 6] },
+  lively: { walk: 0.85, pause: [1, 3] },
+};
+const ACTIVITY_PREF = "perchy.activity", SLEEP_PREF = "perchy.sleep";
+let activity = "normal", sleepAfter = 45;
+try {
+  activity = ACTIVITY[localStorage.getItem(ACTIVITY_PREF)] ? localStorage.getItem(ACTIVITY_PREF) : "normal";
+  const v = localStorage.getItem(SLEEP_PREF);
+  if (v !== null && Number.isFinite(Number(v))) sleepAfter = Number(v);
+} catch {}
+const pause = () => { const [a, b] = ACTIVITY[activity].pause; return a + Math.random() * (b - a); };
 
 const pet = {
   x: 300, y: -120, vx: 0, vy: 0,
@@ -184,6 +200,18 @@ listen("tray", ({ payload }) => {
     setZone(payload.slice(5));
   } else if (payload.startsWith("size:")) {
     setSize(Number(payload.slice(5)));
+  } else if (payload.startsWith("activity:") && ACTIVITY[payload.slice(9)]) {
+    activity = payload.slice(9);
+    try { localStorage.setItem(ACTIVITY_PREF, activity); } catch {}
+    pet.nextDecision = Math.min(pet.nextDecision, pause());
+    reportUi();
+  } else if (payload.startsWith("sleep:")) {
+    const v = Number(payload.slice(6));
+    if (!(v >= 0)) return;
+    sleepAfter = v;
+    try { localStorage.setItem(SLEEP_PREF, String(v)); } catch {}
+    if (v === 0 && pet.state === "sleep") setState("idle");
+    reportUi();
   }
 });
 
@@ -200,7 +228,9 @@ function scaled(r, mul) {
 }
 /** Tell the tray which pet / size / zone to tick. */
 function reportUi() {
-  invoke("report_ui_state", { pet: petKey, size: String(sizeMul), zone: zoneMode }).catch(() => {});
+  invoke("report_ui_state", {
+    pet: petKey, size: String(sizeMul), zone: zoneMode, activity, sleep: String(sleepAfter),
+  }).catch(() => {});
 }
 function applySize() {
   renderer = scaled(baseRenderer, sizeMul);
@@ -358,10 +388,10 @@ function think(t, dt) {
   switch (pet.state) {
     case "idle":
       if (!zoneOf(pet.x)) { pet.target = nearestHome(pet.x); setState("walk"); break; }
-      if (t - pet.lastTouch > SLEEP_AFTER && Math.random() < dt * 0.2) { setState("sleep"); break; }
+      if (sleepAfter > 0 && t - pet.lastTouch > sleepAfter && Math.random() < dt * 0.2) { setState("sleep"); break; }
       if (pet.stateT > pet.nextDecision) {
-        pet.nextDecision = 2 + Math.random() * 4;
-        if (Math.random() < 0.6) {
+        pet.nextDecision = pause();
+        if (Math.random() < ACTIVITY[activity].walk) {
           pet.facing = Math.random() < 0.5 ? -1 : 1;
           setState("walk");
         } else setState("idle");
@@ -378,7 +408,7 @@ function think(t, dt) {
       const [a, b] = zoneOf(pet.x) || [50, W - 50];
       pet.x += pet.facing * WALK_SPEED * dt;
       if (pet.x < a || pet.x > b) { pet.facing *= -1; pet.x = Math.min(Math.max(pet.x, a), b); }
-      if (pet.stateT > pet.nextDecision) { pet.nextDecision = 2 + Math.random() * 4; setState("idle"); }
+      if (pet.stateT > pet.nextDecision) { pet.nextDecision = pause(); setState("idle"); }
       break;
     }
     case "sleep":

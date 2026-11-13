@@ -2,36 +2,11 @@
 //!
 //! The overlay covers exactly one display's work area (macOS gives each display
 //! its own Spaces, so one window can't span several). The choice is saved in
-//! <app config>/settings.json by display name and survives restarts; if that
+//! <app config>/settings.json (settings.rs) by display name and survives restarts; if that
 //! display is unplugged the pet falls back to the primary one and returns
 //! when it comes back.
 
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use tauri::{AppHandle, Manager, Monitor, PhysicalPosition, PhysicalSize, Runtime, WebviewWindow};
-
-#[derive(Serialize, Deserialize, Default)]
-struct Settings {
-    monitor: Option<String>,
-}
-
-fn settings_path<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
-    app.path().app_config_dir().ok().map(|d| d.join("settings.json"))
-}
-
-fn load<R: Runtime>(app: &AppHandle<R>) -> Settings {
-    settings_path(app)
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_default()
-}
-
-fn save<R: Runtime>(app: &AppHandle<R>, settings: &Settings) {
-    if let Some(path) = settings_path(app) {
-        let _ = std::fs::create_dir_all(path.parent().unwrap());
-        let _ = std::fs::write(path, serde_json::to_string_pretty(settings).unwrap());
-    }
-}
+use tauri::{Manager, Monitor, PhysicalPosition, PhysicalSize, Runtime, WebviewWindow};
 
 /// Stable-ish identity: the OS display name, or its index when unnamed.
 fn key(m: &Monitor, index: usize) -> String {
@@ -63,7 +38,7 @@ pub fn list<R: Runtime>(window: &WebviewWindow<R>) -> Vec<(String, String, Monit
 /// The display the pet should be on right now, and its key.
 pub fn target<R: Runtime>(window: &WebviewWindow<R>) -> Option<(String, Monitor)> {
     let monitors = list(window);
-    let wanted = load(window.app_handle()).monitor;
+    let wanted = crate::settings::get(window.app_handle()).monitor;
     if let Some(found) = monitors.iter().find(|(k, _, _)| Some(k) == wanted.as_ref()) {
         return Some((found.0.clone(), found.2.clone()));
     }
@@ -93,7 +68,7 @@ pub fn ensure_placement<R: Runtime>(window: &WebviewWindow<R>) -> bool {
 }
 
 pub fn choose<R: Runtime>(window: &WebviewWindow<R>, monitor_key: &str) {
-    save(window.app_handle(), &Settings { monitor: Some(monitor_key.to_string()) });
+    crate::settings::update(window.app_handle(), |s| s.monitor = Some(monitor_key.to_string()));
     ensure_placement(window);
 }
 

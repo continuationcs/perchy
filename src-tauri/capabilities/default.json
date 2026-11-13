@@ -4,7 +4,8 @@
   "description": "Permissions for the pet overlay window",
   "windows": [
     "main",
-    "hatch"
+    "hatch",
+    "settings"
   ],
   "permissions": [
     "core:default"
