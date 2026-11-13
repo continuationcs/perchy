@@ -1,11 +1,14 @@
-// Hatch window: AI profiles, generation queue, previews, install.
+// Hatch page of the app window: AI profiles, generation queue, previews,
+// install. Wrapped so its names don't clash with app.js.
+(() => {
 const { invoke } = window.__TAURI__.core;
+const ask = (title, text, ok) => (window.coquouConfirm ? window.coquouConfirm(title, text, ok) : Promise.resolve(confirm(title)));
 
 for (const level of ["info", "warn", "error"]) {
   const orig = console[level].bind(console);
   console[level] = (...args) => {
     orig(...args);
-    invoke("log", { level, msg: "[hatch] " + args.map((a) => (a instanceof Error ? a.message : typeof a === "object" ? JSON.stringify(a) : String(a))).join(" ") }).catch(() => {});
+    invoke("log", { level, msg: "[app] " + args.map((a) => (a instanceof Error ? a.message : typeof a === "object" ? JSON.stringify(a) : String(a))).join(" ") }).catch(() => {});
   };
 }
 window.addEventListener("error", (e) => console.error("uncaught:", e.message, `${e.filename}:${e.lineno}`));
@@ -30,6 +33,20 @@ function setStatus(el, text, kind = "") {
 }
 
 // ---------- AI profiles ----------
+const KEYSTORE = /Windows/.test(navigator.userAgent) ? "凭据管理器" : "钥匙串";
+$("keyHint").textContent = `API key 只保存在本机系统的${KEYSTORE}里。`;
+let editing = false; // the full form is shown; otherwise a one-line summary
+function showForm(open) {
+  const p = currentProfile();
+  editing = open || !p || !p.hasKey;
+  $("profileForm").hidden = !editing;
+  $("profileSummary").hidden = editing;
+  if (p) {
+    $("sumName").textContent = `${p.name} ✓`;
+    $("sumModel").textContent = `${p.model || "（未填模型）"} · ${p.protocol === "chat" ? "Chat 协议" : "Images 协议"} · key 已保存`;
+  }
+}
+$("editProfile").addEventListener("click", () => showForm(true));
 function currentProfile() {
   return st.profiles.find((p) => p.id === $("profile").value) || null;
 }
@@ -39,11 +56,12 @@ function fillForm(p) {
   $("pUrl").value = p?.baseUrl || "";
   $("pModel").value = p?.model || "";
   $("pKey").value = "";
-  $("pKey").placeholder = p?.hasKey ? "已保存在钥匙串（留空不修改）" : "sk-…";
+  $("pKey").placeholder = p?.hasKey ? `已保存在${KEYSTORE}（留空不修改）` : "sk-…";
   $("pQuality").value = p?.quality || "";
   $("pTransparent").checked = !!p?.transparent;
   $("deleteProfile").disabled = !p;
   $("imagesOpts").hidden = $("pProtocol").value !== "images";
+  showForm(false);
 }
 async function loadProfiles(selectId) {
   st.profiles = await invoke("ai_profiles");
@@ -71,7 +89,7 @@ async function saveProfile() {
   return saved;
 }
 $("profile").addEventListener("change", () => fillForm(currentProfile()));
-$("newProfile").addEventListener("click", () => { $("profile").value = ""; fillForm(null); $("pName").focus(); });
+$("newProfile").addEventListener("click", () => { $("profile").value = ""; fillForm(null); showForm(true); $("pName").focus(); });
 $("pProtocol").addEventListener("change", () => { $("imagesOpts").hidden = $("pProtocol").value !== "images"; });
 $("saveProfile").addEventListener("click", async () => {
   try { await saveProfile(); setStatus($("profileStatus"), "已保存", "ok"); }
@@ -93,7 +111,7 @@ $("testProfile").addEventListener("click", async () => {
 });
 $("deleteProfile").addEventListener("click", async () => {
   const p = currentProfile();
-  if (!p || !confirm(`删除配置「${p.name}」和它保存的 API key？`)) return;
+  if (!p || !(await ask(`删除配置「${p.name}」？`, "它保存的 API key 也会一起删除。"))) return;
   await invoke("ai_delete_profile", { id: p.id });
   await loadProfiles();
 });
@@ -110,14 +128,16 @@ function showReference() {
   drop.classList.add("has");
   drop.innerHTML = "";
   const img = new Image(); img.src = "data:image/png;base64," + st.refB64; drop.append(img);
-  const clear = document.createElement("button"); clear.className = "small"; clear.textContent = "移除"; clear.style.marginTop = "6px";
-  clear.onclick = (e) => { e.stopPropagation(); st.refB64 = st.refData = null; drop.classList.remove("has"); drop.textContent = "点击选择或拖入一张图片"; };
+  const clear = document.createElement("button"); clear.className = "btn"; clear.type = "button"; clear.textContent = "移除";
+  clear.onclick = (e) => { e.stopPropagation(); st.refB64 = st.refData = null; drop.classList.remove("has"); drop.textContent = "点击选择，或把图片拖进窗口"; };
   drop.append(clear);
 }
 $("drop").addEventListener("click", () => $("file").click());
 $("file").addEventListener("change", (e) => setReference(e.target.files[0]));
 $("drop").addEventListener("dragover", (e) => { e.preventDefault(); });
 $("drop").addEventListener("drop", (e) => { e.preventDefault(); setReference(e.dataTransfer.files[0]); });
+// The app window's native drop handler hands image files over here.
+window.hatchSetReference = setReference;
 
 // ---------- estimate ----------
 function plannedStates() {
@@ -125,13 +145,13 @@ function plannedStates() {
 }
 function updateEstimate() {
   const n = 1 + plannedStates().length;
-  $("estimate").innerHTML = `预计 <b>${n}</b> 次图像生成（形象 1 次 + 动作 ${n - 1} 次；向左走由向右走镜像得到${$("withLook").checked ? "；看向方向含 1 次上右下左锚点" : ""}）。失败重试另计，费用以你的接口计费为准。`;
+  $("estimate").innerHTML = `预计 <b>${n}</b> 次图像生成（形象 1 次、动作 ${n - 1} 次）。失败重试另计，费用按你的接口计费。`;
 }
 $("withLook").addEventListener("change", updateEstimate);
 
 // ---------- saved run (resume after closing the window) ----------
 // Self-tests don't touch a real saved run unless asked to (`persist`).
-const persist = !window.__PERCHY_SELFTEST__ || !!window.__PERCHY_SELFTEST__.persist;
+const persist = !window.__COQUOU_SELFTEST__ || !!window.__COQUOU_SELFTEST__.persist;
 function saveMeta() {
   if (!persist || !st.baseB64) return;
   const rows = {};
@@ -155,20 +175,21 @@ async function offerResume() {
   const planned = S.filter((s) => !s.mirrorOf && (!(s.look || s.cardinal) || m.withLook)).length;
   const done = Object.keys(run.images).filter((k) => k.startsWith("row-")).length;
   const area = $("baseArea");
-  area.className = "box";
+  area.className = "resume";
   area.innerHTML = "";
-  const p = document.createElement("p");
-  p.style.margin = "0 0 10px";
-  p.textContent = `上次的孵化还没完成：「${m.name || "未命名"}」，动作已完成 ${done}/${planned} 行（${new Date(m.savedAt).toLocaleString()}）。继续的话已生成的图不会重新收费。`;
-  const go = document.createElement("button"); go.className = "primary"; go.textContent = "继续上次";
-  const drop = document.createElement("button"); drop.textContent = "丢弃"; drop.style.marginLeft = "8px";
+  const p = document.createElement("div");
+  p.textContent = `上次的孵化还没完成：「${m.name || "未命名"}」，动作已完成 ${done}/${planned} 行（${new Date(m.savedAt).toLocaleString()}）。继续的话，已生成的图不会重新收费。`;
+  const go = document.createElement("button"); go.className = "btn primary"; go.type = "button"; go.textContent = "继续上次";
+  const drop = document.createElement("button"); drop.className = "btn"; drop.type = "button"; drop.textContent = "丢弃";
   go.onclick = () => restoreRun(run);
   drop.onclick = async () => {
-    if (!confirm("丢弃上次孵化的所有图片？")) return;
+    if (!(await ask("丢弃上次的孵化？", "已经生成的图片都会删掉，无法恢复。", "丢弃"))) return;
     await invoke("hatch_clear");
-    area.className = "empty"; area.textContent = "先在左边填好 AI 接口和宠物信息，然后点「生成形象」。";
+    area.className = "empty"; area.textContent = "填好上面的接口和描述，点「生成形象」。";
   };
-  area.append(p, go, drop);
+  const acts = document.createElement("div"); acts.className = "acts"; acts.append(go, drop);
+  area.append(p, acts);
+  window.coquouHatchPending?.(true);
 }
 
 async function restoreRun(run) {
@@ -238,14 +259,14 @@ async function genBase() {
     return false;
   } finally {
     $("genBase").disabled = false;
-    $("genBase").textContent = "① 重新生成形象";
+    $("genBase").textContent = "重新生成形象";
   }
 }
 
 function renderBase(base) {
   const area = $("baseArea");
   area.className = "";
-  area.innerHTML = "<h2>形象</h2>";
+  area.innerHTML = "";
   const wrap = document.createElement("div"); wrap.className = "base";
   const raw = new Image(); raw.className = "raw"; raw.src = "data:image/png;base64," + st.baseB64; raw.title = "模型原图";
   const cut = previewCanvas(base.cell); cut.style.width = "192px"; cut.title = "抠图后";
@@ -266,7 +287,7 @@ function renderCards() {
   for (const s of S) {
     if ((s.look || s.cardinal) && !$("withLook").checked) continue;
     const r = st.rows[s.id] || { status: "idle" };
-    const card = document.createElement("div"); card.className = "card"; card.id = "card-" + s.id;
+    const card = document.createElement("div"); card.className = "hcard"; card.id = "card-" + s.id;
     const pill = { idle: ["等待", ""], run: ["生成中…", "run"], ok: ["完成", "ok"], warn: ["有提醒", "warn"], bad: ["失败", "bad"] }[r.status];
     card.innerHTML = `<header><b>${s.label}</b><span class="pill ${pill[1]}">${s.mirrorOf ? "镜像 · " : ""}${pill[0]}</span></header>`;
     const anim = document.createElement("canvas"); anim.className = "anim checker";
@@ -283,7 +304,7 @@ function renderCards() {
       card.append(d);
     }
     if (!s.mirrorOf) {
-      const btn = document.createElement("button"); btn.className = "small";
+      const btn = document.createElement("button"); btn.className = "btn"; btn.type = "button";
       btn.textContent = r.status === "idle" ? "只生成这一行" : "重新生成";
       btn.disabled = r.status === "run" || !st.baseB64;
       btn.onclick = () => genRow(s).then(afterRows);
@@ -345,7 +366,7 @@ async function genRow(s, attempt = 1) {
   // One automatic retry for frames that came out unusable or a flaky request.
   if (retry && attempt < 2) {
     console.info("row", s.id, "retrying once");
-    await new Promise((r) => setTimeout(r, window.__PERCHY_SELFTEST__ ? 200 : 3000));
+    await new Promise((r) => setTimeout(r, window.__COQUOU_SELFTEST__ ? 200 : 3000));
     return genRow(s, attempt + 1);
   }
   renderCards();
@@ -428,9 +449,10 @@ async function install() {
       displayName: $("petName").value.trim() || $("petId").value.trim(),
       description: $("petDesc").value.trim() || "AI hatched pet",
       spritesheetPng: st.atlasB64,
-      perchyJson: JSON.stringify({ format: "perchy/1", tags: ["ai-hatched"], generator: { tool: "perchy-hatch", protocol: p?.protocol, model: p?.model } }, null, 2),
+      coquouJson: JSON.stringify({ format: "coquou/1", tags: ["ai-hatched"], generator: { tool: "coquou-hatch", protocol: p?.protocol, model: p?.model } }, null, 2),
     });
     setStatus(el, `${done.replaced ? "已更新" : "已安装"}「${done.displayName}」，桌宠已经换成它了。`, "ok");
+    window.coquouHatchPending?.(false);
     if (persist) invoke("hatch_clear").catch(() => {});
     console.info("installed", done.key);
     return done;
@@ -456,12 +478,12 @@ setInterval(() => {
 
 // ---------- start ----------
 updateEstimate();
-loadProfiles().then(() => (window.__PERCHY_SELFTEST__ ? selftest() : offerResume()));
+loadProfiles().then(() => (window.__COQUOU_SELFTEST__ ? selftest() : offerResume()));
 
-// Dev self-test (`perchy --hatch-selftest <base url> <images|chat>`) runs the
+// Dev self-test (`coquou --hatch-selftest <base url> <images|chat>`) runs the
 // whole flow against a mock server (see tools/mock-image-api.py).
 async function selftest() {
-  const cfg = window.__PERCHY_SELFTEST__;
+  const cfg = window.__COQUOU_SELFTEST__;
   if (!cfg) return;
   const q = { get: (k) => cfg[k] };
   console.info("selftest start", q.get("protocol"));
@@ -503,3 +525,4 @@ async function selftest() {
     if (persist) await invoke("hatch_clear").catch(() => {});
   }
 }
+})();

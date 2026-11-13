@@ -89,6 +89,11 @@ pub struct SettingsView {
     displays: Vec<Display>,
     autostart: bool,
     version: String,
+    /// Where Coquou installs pets and where Codex pets are read from.
+    pets_dir: Option<String>,
+    codex_dir: Option<String>,
+    /// "macos" | "windows" | "linux", for platform wording.
+    platform: &'static str,
 }
 
 #[tauri::command]
@@ -106,6 +111,9 @@ pub fn get_settings(app: AppHandle) -> SettingsView {
         displays,
         autostart: app.autolaunch().is_enabled().unwrap_or(false),
         version: app.package_info().version.to_string(),
+        pets_dir: crate::pets::coquou_root(&app).map(|p| p.display().to_string()),
+        codex_dir: crate::pets::codex_root(&app).map(|p| p.display().to_string()),
+        platform: std::env::consts::OS,
     }
 }
 

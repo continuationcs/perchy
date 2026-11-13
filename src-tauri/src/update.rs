@@ -9,7 +9,7 @@
 //! settings window, a bubble from the pet); nothing installs until the user
 //! clicks 「更新并重启」.
 //!
-//! Dev: `PERCHY_UPDATE_URL=http://127.0.0.1:8765/latest.json` points the
+//! Dev: `COQUOU_UPDATE_URL=http://127.0.0.1:8765/latest.json` points the
 //! updater at a local server (plain http only works in debug builds).
 
 use serde::Serialize;
@@ -69,10 +69,31 @@ fn set<R: Runtime>(app: &AppHandle<R>, change: impl FnOnce(&mut Status)) {
     let _ = app.emit("update-status", status(app));
 }
 
+/// Updater errors in plain Chinese (the raw text goes to the log).
+fn friendly(raw: &str) -> String {
+    let e = raw.to_lowercase();
+    let msg = if e.contains("signature") {
+        "更新包的签名校验没通过，为安全起见没有安装。请稍后再试，或到发布页手动下载。"
+    } else if e.contains("platform") && (e.contains("not found") || e.contains("missing")) {
+        "这次发布还没有适合你电脑的安装包，请过一阵再检查。"
+    } else if e.contains("timed out") || e.contains("timeout") {
+        "连接 GitHub 超时了，请检查网络后再试。"
+    } else if e.contains("dns") || e.contains("connect") || e.contains("network") || e.contains("error sending request") || e.contains("tls") {
+        "连不上更新服务器（GitHub），请检查网络或代理后再试。"
+    } else if e.contains("404") || e.contains("not found") {
+        "还没有找到发布的版本信息。"
+    } else if e.contains("permission") || e.contains("denied") || e.contains("read-only") {
+        "没有权限替换应用文件。请把 Coquou 移到「应用程序」文件夹后再试。"
+    } else {
+        "检查或安装更新时出了点问题，请稍后再试。"
+    };
+    msg.to_string()
+}
+
 async fn check_inner<R: Runtime>(app: &AppHandle<R>) -> Result<Option<Update>, String> {
     let mut builder = app.updater_builder().timeout(Duration::from_secs(30));
-    if let Ok(url) = std::env::var("PERCHY_UPDATE_URL") {
-        let url = url.parse().map_err(|e| format!("PERCHY_UPDATE_URL: {e}"))?;
+    if let Ok(url) = std::env::var("COQUOU_UPDATE_URL") {
+        let url = url.parse().map_err(|e| format!("COQUOU_UPDATE_URL: {e}"))?;
         builder = builder.endpoints(vec![url]).map_err(|e| e.to_string())?;
     }
     let updater = builder.build().map_err(|e| e.to_string())?;
@@ -94,7 +115,7 @@ pub async fn check<R: Runtime>(app: &AppHandle<R>) -> Result<Status, String> {
                 notes: update.body.clone().filter(|b| !b.trim().is_empty()),
                 date: update.date.map(|d| d.date().to_string()),
             };
-            println!("[perchy] update available: {} → {}", update.current_version, update.version);
+            println!("[coquou] update available: {} → {}", update.current_version, update.version);
             *app.state::<UpdateState>().pending.lock().unwrap() = Some(update.clone());
             set(app, |s| {
                 s.available = Some(info.clone());
@@ -106,7 +127,7 @@ pub async fn check<R: Runtime>(app: &AppHandle<R>) -> Result<Status, String> {
             }
         }
         Ok(None) => {
-            println!("[perchy] up to date ({})", app.package_info().version);
+            println!("[coquou] up to date ({})", app.package_info().version);
             *app.state::<UpdateState>().pending.lock().unwrap() = None;
             set(app, |s| {
                 s.available = None;
@@ -117,15 +138,15 @@ pub async fn check<R: Runtime>(app: &AppHandle<R>) -> Result<Status, String> {
             }
         }
         Err(e) => {
-            eprintln!("[perchy] update check failed: {e}");
-            set(app, |s| s.last_error = Some(e.clone()));
+            eprintln!("[coquou] update check failed: {e}");
+            set(app, |s| s.last_error = Some(friendly(e)));
         }
     }
     set(app, |s| {
         s.checking = false;
         s.last_checked = Some(now());
     });
-    result.map(|_| status(app))
+    result.map(|_| status(app)).map_err(|e| friendly(&e))
 }
 
 /// Background checks while `autoUpdate` is on.
@@ -135,10 +156,10 @@ pub fn start(app: AppHandle) {
         loop {
             if crate::settings::get(&app).auto_update {
                 let _ = tauri::async_runtime::block_on(check(&app));
-                // Dev only: PERCHY_UPDATE_AUTOINSTALL=1 installs right away
+                // Dev only: COQUOU_UPDATE_AUTOINSTALL=1 installs right away
                 // (end-to-end updater test without clicking).
                 if cfg!(debug_assertions)
-                    && std::env::var_os("PERCHY_UPDATE_AUTOINSTALL").is_some()
+                    && std::env::var_os("COQUOU_UPDATE_AUTOINSTALL").is_some()
                     && available_version(&app).is_some()
                 {
                     let _ = tauri::async_runtime::block_on(update_install(app.clone()));
@@ -177,17 +198,17 @@ pub async fn update_install(app: AppHandle) -> Result<(), String> {
                 downloaded += chunk as u64;
                 let _ = progress.emit("update-progress", serde_json::json!({ "downloaded": downloaded, "total": total }));
             },
-            || println!("[perchy] update downloaded, verifying and installing"),
+            || println!("[coquou] update downloaded, verifying and installing"),
         )
         .await;
     match result {
         Ok(()) => {
-            println!("[perchy] update installed, restarting");
+            println!("[coquou] update installed, restarting");
             app.restart();
         }
         Err(e) => {
-            let msg = e.to_string();
-            eprintln!("[perchy] update install failed: {msg}");
+            eprintln!("[coquou] update install failed: {e}");
+            let msg = friendly(&e.to_string());
             set(&app, |s| {
                 s.installing = false;
                 s.last_error = Some(msg.clone());

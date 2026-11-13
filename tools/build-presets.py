@@ -6,8 +6,8 @@ Needs Google Chrome (or Chromium / Edge) for headless canvas rendering.
     python3 tools/build-presets.py [--only qiqi] [--preview-dir DIR] [--chrome PATH]
 
 Each preset becomes a Codex v2 pet directory:
-    pet.json, perchy.json, spritesheet.webp (1536×2288),
-    spritesheet@2x.webp (3072×4576, used by Perchy for HiDPI screens)
+    pet.json, coquou.json, spritesheet.webp (1536×2288),
+    spritesheet@2x.webp (3072×4576, used by Coquou for HiDPI screens)
 """
 import argparse
 import base64
@@ -87,9 +87,9 @@ def main():
             "spriteVersionNumber": 2,
             "spritesheetPath": "spritesheet.webp",
         }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        (out / "perchy.json").write_text(json.dumps({
-            "format": "perchy/1",
-            "author": "Perchy contributors",
+        (out / "coquou.json").write_text(json.dumps({
+            "format": "coquou/1",
+            "author": "Coquou contributors",
             "license": "CC-BY-4.0",
             "tags": ["preset"],
             "hd": "spritesheet@2x.webp",

@@ -1,6 +1,6 @@
 // The three preset pets, drawn with rig.js:
 //   mianmian 棉棉 — ragdoll kitten
-//   qiqi     栖栖 — anime girl, Perchy's mascot (little bird hair clip)
+//   qiqi     栖栖 — anime girl, Coquou's mascot (little bird hair clip)
 //
 // Local coordinates: origin at the feet on the ground, y grows downward
 // (so the body lives at negative y).
@@ -236,7 +236,7 @@ const WHITE = { light: "#ffffff", base: "#f6f5fb", dark: "#d4d3e3", line: "#9c9a
 const qiqi = {
   id: "qiqi",
   displayName: "栖栖",
-  description: "Perchy 的看板娘，头上停着一只小黄鸟。",
+  description: "Coquou 的看板娘，头上停着一只小黄鸟。",
   iris: ["#ffe9a8", "#ee8a6a", "#8a2f4a"],
   hair: QH,
   sock: { from: 0.35, base: "#ffffff", line: "#b9b7cc" },

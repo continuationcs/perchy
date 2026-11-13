@@ -1,4 +1,4 @@
-//! Installing pets into Perchy's own pets directory from a `.pet` / `.zip`
+//! Installing pets into Coquou's own pets directory from a `.pet` / `.zip`
 //! archive or a plain directory.
 //!
 //! Untrusted input, so every step is defensive:
@@ -148,6 +148,9 @@ fn image_size(bytes: &[u8]) -> Option<(u32, u32)> {
     None
 }
 
+/// The extension file: `coquou.json`, or `perchy.json` from before the rename.
+pub const EXT_FILES: [&str; 2] = ["coquou.json", "perchy.json"];
+
 /// Check the pet against docs/pet-format.md; returns (id, displayName).
 fn validate(dir: &Path) -> Result<(String, String), String> {
     let text = fs::read_to_string(dir.join("pet.json")).map_err(|_| "读不了 pet.json".to_string())?;
@@ -180,22 +183,22 @@ fn validate(dir: &Path) -> Result<(String, String), String> {
         ));
     }
 
-    if let Ok(text) = fs::read_to_string(dir.join("perchy.json")) {
+    if let Some(text) = EXT_FILES.iter().find_map(|f| fs::read_to_string(dir.join(f)).ok()) {
         let ext: serde_json::Value =
-            serde_json::from_str(&text).map_err(|e| format!("perchy.json 格式错误：{e}"))?;
+            serde_json::from_str(&text).map_err(|e| format!("coquou.json 格式错误：{e}"))?;
         if let Some(hd) = ext.get("hd").and_then(|v| v.as_str()) {
             let bytes = fs::read(dir.join(hd)).ok().filter(|_| safe_rel(hd));
             let size = bytes.as_deref().and_then(image_size);
             let ok = size.is_some_and(|(hw, hh)| hw % w == 0 && hw / w >= 2 && hw / w <= 4 && hw * h == hh * w);
             if !ok {
-                return Err(format!("perchy.json 的 hd 图集 {hd} 不存在，或不是主图集的 2–4 倍"));
+                return Err(format!("coquou.json 的 hd 图集 {hd} 不存在，或不是主图集的 2–4 倍"));
             }
         }
         if let Some(states) = ext["states"].as_object() {
             for (name, state) in states {
                 if let Some(sheet) = state["sheet"].as_str() {
                     if !safe_rel(sheet) || !dir.join(sheet).is_file() {
-                        return Err(format!("perchy.json 的状态 {name} 引用的 {sheet} 不存在"));
+                        return Err(format!("coquou.json 的状态 {name} 引用的 {sheet} 不存在"));
                     }
                 }
             }
@@ -205,7 +208,7 @@ fn validate(dir: &Path) -> Result<(String, String), String> {
 }
 
 pub fn install<R: Runtime>(app: &AppHandle<R>, src: &Path) -> Result<Installed, String> {
-    let root = pets::perchy_root(app).ok_or("找不到应用数据目录")?;
+    let root = pets::coquou_root(app).ok_or("找不到应用数据目录")?;
     fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     let nonce = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
     let staging = root.join(format!(".staging-{nonce}"));
@@ -231,7 +234,7 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, src: &Path) -> Result<Installed, 
             fs::remove_dir_all(&dest).map_err(|e| e.to_string())?;
         }
         fs::rename(&pet_dir, &dest).map_err(|e| e.to_string())?;
-        Ok(Installed { key: format!("perchy:{id}"), display_name, replaced })
+        Ok(Installed { key: format!("coquou:{id}"), display_name, replaced })
     })();
 
     let _ = fs::remove_dir_all(&staging);

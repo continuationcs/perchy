@@ -572,6 +572,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "coquou"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "core-foundation 0.10.1",
+ "core-graphics",
+ "keyring",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "windows",
+ "zip 2.6.1",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2737,26 +2757,6 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
-
-[[package]]
-name = "perchy"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "core-foundation 0.10.1",
- "core-graphics",
- "keyring",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-single-instance",
- "tauri-plugin-updater",
- "windows",
- "zip 2.6.1",
-]
 
 [[package]]
 name = "phf"

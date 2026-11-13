@@ -1,4 +1,4 @@
-// Perchy runner (PoC): state machine, physics, per-pixel click-through.
+// Coquou runner (PoC): state machine, physics, per-pixel click-through.
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
@@ -43,7 +43,7 @@ const ACTIVITY = {
   normal: { walk: 0.6, pause: [2, 6] },
   lively: { walk: 0.85, pause: [1, 3] },
 };
-const ACTIVITY_PREF = "perchy.activity", SLEEP_PREF = "perchy.sleep";
+const ACTIVITY_PREF = "coquou.activity", SLEEP_PREF = "coquou.sleep";
 let activity = "normal", sleepAfter = 45;
 try {
   activity = ACTIVITY[localStorage.getItem(ACTIVITY_PREF)] ? localStorage.getItem(ACTIVITY_PREF) : "normal";
@@ -161,7 +161,7 @@ let power = { paused: false, battery: false };
 let loopRunning = true;
 function applyPower(next) {
   power = next;
-  console.info("[perchy] power:", JSON.stringify(next));
+  console.info("[coquou] power:", JSON.stringify(next));
   if (!power.paused && !loopRunning) {
     loopRunning = true;
     lastFrame = performance.now();
@@ -217,7 +217,7 @@ listen("tray", ({ payload }) => {
 
 // ---------- size (tray 「大小」, remembered per pet) ----------
 let baseRenderer = renderer, petKey = "builtin", sizeMul = 1;
-const sizeKey = (key) => `perchy.size.${key}`;
+const sizeKey = (key) => `coquou.size.${key}`;
 function scaled(r, mul) {
   if (mul === 1) return r;
   return {
@@ -261,7 +261,14 @@ listen("pet-installed", async ({ payload }) => {
   }
 });
 listen("update-available", ({ payload }) => {
-  say(`Perchy 有新版本 ${payload.version} 啦，在托盘菜单里更新`, 6);
+  say(`Coquou 有新版本 ${payload.version} 啦，点托盘图标就能更新`, 6);
+});
+// A pet was deleted in the app window: if it was ours, pick another.
+listen("pets-changed", async ({ payload }) => {
+  if (payload?.removed !== petKey) return;
+  const pets = await invoke("list_pets").catch(() => []);
+  const next = pets.find((p) => p.key === "preset:qiqi") ?? pets[0];
+  if (!next || !(await usePet(next.key))) await usePet("builtin");
 });
 listen("pet-install-failed", ({ payload }) => {
   showFace("shock", clock, 1.5);
@@ -303,7 +310,7 @@ function drawBubble() {
 }
 
 // ---------- pet switching ----------
-const PET_PREF = "perchy.pet";
+const PET_PREF = "coquou.pet";
 // `remember: false` for automatic fallbacks, so a missing pet doesn't
 // overwrite the user's own choice.
 async function usePet(key, remember = true) {
@@ -314,7 +321,7 @@ async function usePet(key, remember = true) {
       if (!entry) throw new Error(`pet ${key} not found`);
       next = await window.loadSpritePet(entry);
     } catch (e) {
-      console.error("[perchy] failed to load pet", key, e);
+      console.error("[coquou] failed to load pet", key, e);
       emit("?", "#ff6b6b", 28, pet.x, pet.y - renderer.height - 20, 0, -40, 1.2);
       return false;
     }
@@ -326,7 +333,7 @@ async function usePet(key, remember = true) {
   applySize();
   reportUi();
   if (remember) try { localStorage.setItem(PET_PREF, key); } catch {}
-  console.info("[perchy] pet:", key, renderer.name, `S=${renderer.S} h=${Math.round(renderer.height)}`);
+  console.info("[coquou] pet:", key, renderer.name, `S=${renderer.S} h=${Math.round(renderer.height)}`);
   // Drop the new pet in from above.
   pet.y = -40; pet.vx = 0; pet.vy = 0; setState("air");
   return true;
@@ -336,7 +343,7 @@ async function usePet(key, remember = true) {
 // Keep the pet out of the middle of the screen, where input boxes and
 // content usually are. Outside its zone (after being dropped or thrown
 // there) it walks back to the nearest one.
-const ZONE_PREF = "perchy.zone";
+const ZONE_PREF = "coquou.zone";
 let zoneMode = "corners";
 try { zoneMode = localStorage.getItem(ZONE_PREF) || "corners"; } catch {}
 function zones() {
@@ -519,7 +526,7 @@ requestAnimationFrame(frame);
   let saved = null;
   try { saved = localStorage.getItem(PET_PREF); } catch {}
   const pets = await invoke("list_pets").catch(() => []);
-  console.info("[perchy] pets found:", pets.map((p) => p.key).join(", ") || "(none)");
+  console.info("[coquou] pets found:", pets.map((p) => p.key).join(", ") || "(none)");
   // A pet just installed by double-clicking a .pet wins.
   const pending = await invoke("take_pending_pet").catch(() => null);
   // First run: a pet the user already has (e.g. from Codex), else the mascot.
@@ -532,4 +539,16 @@ requestAnimationFrame(frame);
     if (!other || !(await usePet(other.key, false))) await usePet("builtin", false);
   }
   reportUi(); // also covers starting on the built-in cat
+
+  // First run: show the app window once and say where Coquou lives.
+  const FIRST = "coquou.firstRun.done";
+  let firstRun = false;
+  try { firstRun = !localStorage.getItem(FIRST); localStorage.setItem(FIRST, "1"); } catch {}
+  if (firstRun) {
+    invoke("open_window", { name: "app" }).catch(() => {});
+    const mac = /Mac/.test(navigator.userAgent);
+    setTimeout(() => say(mac
+      ? "你好呀！我住在屏幕右上角的菜单栏里，点那里的图标可以换宠物、叫我回来"
+      : "你好呀！我住在屏幕右下角的通知区域，单击图标打开设置，右键换宠物、叫我回来", 8), 1500);
+  }
 })();

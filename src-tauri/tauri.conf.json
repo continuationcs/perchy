@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Perchy",
+  "productName": "Coquou",
   "version": "0.1.0",
-  "identifier": "io.perchy.desktop",
+  "identifier": "io.github.coquou",
   "build": {
     "frontendDist": "../src"
   },
@@ -12,7 +12,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Perchy",
+        "title": "Coquou",
         "width": 800,
         "height": 600,
         "transparent": true,
@@ -48,23 +48,42 @@
         "ext": [
           "pet"
         ],
-        "name": "Perchy Pet",
-        "description": "Perchy 宠物包",
+        "name": "Coquou Pet",
+        "description": "Coquou 宠物包",
         "role": "Viewer",
         "rank": "Owner",
-        "mimeType": "application/x-perchy-pet",
+        "mimeType": "application/x-coquou-pet",
         "contentTypes": [
-          "io.perchy.pet"
+          "io.github.coquou.pet"
         ],
         "exportedType": {
-          "identifier": "io.perchy.pet",
+          "identifier": "io.github.coquou.pet",
           "conformsTo": [
             "public.zip-archive"
           ]
         }
       }
     ],
-    "createUpdaterArtifacts": false
+    "createUpdaterArtifacts": false,
+    "publisher": "continuationcs",
+    "copyright": "© 2026 continuationcs and Coquou contributors",
+    "category": "Entertainment",
+    "shortDescription": "开源桌面宠物",
+    "longDescription": "Coquou 是一个开源的桌面宠物：可爱的小家伙在屏幕角落溜达，可以摸、拎、扔，兼容 Codex 宠物包，也能用 AI 孵化你自己的宠物。",
+    "homepage": "https://github.com/continuationcs/perchy",
+    "windows": {
+      "nsis": {
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
+        "displayLanguageSelector": false,
+        "installMode": "currentUser"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
   },
   "plugins": {
     "updater": {

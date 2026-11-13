@@ -1,6 +1,6 @@
 # 发版与自动更新
 
-Perchy 用 Tauri 官方的 `tauri-plugin-updater` 自动更新：
+Coquou 用 Tauri 官方的 `tauri-plugin-updater` 自动更新：
 
 - 应用启动 20 秒后检查一次，之后每 6 小时检查一次（设置 → 关于与更新 →「自动检查更新」可关）。
 - 检查地址：`https://github.com/continuationcs/perchy/releases/latest/download/latest.json`，即 GitHub 上最新一个正式 Release 里的 `latest.json`。
@@ -11,7 +11,7 @@ Perchy 用 Tauri 官方的 `tauri-plugin-updater` 自动更新：
 
 | 文件 | 说明 |
 |---|---|
-| `~/.tauri/perchy-updater.key` | **更新签名私钥**，只在发版用的 Mac 上，不进仓库。**一定要备份**：丢了它，已经装好的 Perchy 就再也收不到更新（只能让用户手动重装带新公钥的版本） |
+| `~/.tauri/perchy-updater.key` | **更新签名私钥**，只在发版用的 Mac 上，不进仓库。**一定要备份**：丢了它，已经装好的 Coquou 就再也收不到更新（只能让用户手动重装带新公钥的版本） |
 | `~/.tauri/perchy-updater.key.pub` | 公钥，已写进 `src-tauri/tauri.conf.json` 的 `plugins.updater.pubkey` |
 
 私钥目前没有密码。也可以设一个密码（`npx @tauri-apps/cli@2 signer generate -w <路径> -p <密码>` 重新生成，同时更新公钥），发版时通过 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 传入。
@@ -59,11 +59,11 @@ export GH_TOKEN=$(gh auth token -u continuationcs)
 AI 接口的 key 存在钥匙串里。没有固定签名身份时，每次更新后应用的签名都会变，macOS 会把它当成别的应用，读 key 时又弹一次授权框。用一个固定的自签名证书签名就能解决（免费；也不需要 Apple 开发者账号）：
 
 1. 打开「钥匙串访问」→ 菜单「钥匙串访问」→「证书助理」→「创建证书…」。
-2. 名称填 `Perchy Self-Signed`，身份类型「自签名根证书」，证书类型选「**代码签名**」，创建。
+2. 名称填 `Coquou Self-Signed`，身份类型「自签名根证书」，证书类型选「**代码签名**」，创建。
 3. 发版前设置环境变量，`release.py build` 会用它给应用签名：
 
    ```bash
-   export PERCHY_SIGN_IDENTITY="Perchy Self-Signed"
+   export COQUOU_SIGN_IDENTITY="Coquou Self-Signed"
    ```
 
 这个证书只解决钥匙串问题。首次安装时 Gatekeeper 仍会拦（要右键 →「打开」）；要彻底解决，需要 Apple 开发者账号签名并公证。
@@ -81,13 +81,23 @@ AI 接口的 key 存在钥匙串里。没有固定签名身份时，每次更新
 cd src-tauri
 # 1) 打一个 0.1.0 调试包，复制到别处当「已安装」的版本
 npx @tauri-apps/cli@2 build --debug --bundles app
-cp -R target/debug/bundle/macos/Perchy.app /tmp/perchy-e2e/
+cp -R target/debug/bundle/macos/Coquou.app /tmp/coquou-e2e/
 # 2) 打一个带签名的 0.1.1 更新包
 TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/perchy-updater.key)" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
   npx @tauri-apps/cli@2 build --debug --bundles app --config '{"version":"0.1.1","bundle":{"createUpdaterArtifacts":true}}'
-# 3) 用 Perchy.app.tar.gz 和 .sig 写一个 latest.json，用 python3 -m http.server 提供出来，然后：
-PERCHY_UPDATE_URL=http://127.0.0.1:8899/latest.json PERCHY_UPDATE_AUTOINSTALL=1 \
-  /tmp/perchy-e2e/Perchy.app/Contents/MacOS/perchy
+# 3) 用 Coquou.app.tar.gz 和 .sig 写一个 latest.json，用 python3 -m http.server 提供出来，然后：
+COQUOU_UPDATE_URL=http://127.0.0.1:8899/latest.json COQUOU_UPDATE_AUTOINSTALL=1 \
+  /tmp/coquou-e2e/Coquou.app/Contents/MacOS/coquou
 ```
 
-日志里依次出现 `update available: 0.1.0 → 0.1.1`、`update installed, restarting`，`/tmp/perchy-e2e/Perchy.app` 的版本变成 0.1.1。把更新包改坏后再试，应当出现 `signature verification failed`，并且不会安装。
+日志里依次出现 `update available: 0.1.0 → 0.1.1`、`update installed, restarting`，`/tmp/coquou-e2e/Coquou.app` 的版本变成 0.1.1。把更新包改坏后再试，应当出现 `signature verification failed`，并且不会安装。
+
+## 迁到 GitHub 组织
+
+应用已改名为 Coquou（标识 `io.github.coquou`），计划建 GitHub 组织 `coquou`，把仓库迁过去。迁移后要改三处地址，再发一个新版本：
+
+- `src-tauri/tauri.conf.json` 的 `plugins.updater.endpoints`
+- `tools/release.py` 的 `REPO`
+- `src-tauri/src/main.rs` 里 `open_link` 的三个链接
+
+GitHub 会把旧仓库地址（包括 Release 下载地址）自动重定向到新地址，所以迁移前已经装好的版本照样能检查到更新；但不要在旧地址上再新建同名仓库，否则重定向会失效。私钥文件名 `perchy-updater.key` 保持不变，签名公钥也不用换。

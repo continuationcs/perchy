@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mock OpenAI-style image API for testing Perchy's hatch pipeline offline.
+"""Mock OpenAI-style image API for testing Coquou's hatch pipeline offline.
 
 Implements POST /v1/images/generations, /v1/images/edits (multipart) and
 /v1/chat/completions (modalities image). It reads the frame count and grid

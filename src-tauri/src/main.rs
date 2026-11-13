@@ -1,4 +1,4 @@
-// Perchy — desktop pet runner (PoC)
+// Coquou — desktop pet runner (PoC)
 //
 // One transparent, borderless, always-on-top, non-focusable window covers one
 // display's work area (see screens.rs). The window ignores mouse events (clicks pass through
@@ -10,6 +10,7 @@
 
 mod ai;
 mod hatch_run;
+mod migrate;
 mod install;
 mod pets;
 mod screens;
@@ -103,7 +104,7 @@ fn report_ui_state(
     if changed {
         let ui = state.0.lock().unwrap().clone();
         println!(
-            "[perchy] ui state: pet={} size={} zone={} activity={} sleep={}",
+            "[coquou] ui state: pet={} size={} zone={} activity={} sleep={}",
             ui.pet, ui.size, ui.zone, ui.activity, ui.sleep
         );
         refresh_tray(&app);
@@ -166,11 +167,11 @@ fn watch<R: Runtime>(app: AppHandle<R>) {
                     power.paused = fullscreen;
                     changed = true;
                     let _ = if fullscreen { window.hide() } else { window.show() };
-                    println!("[perchy] {}", if fullscreen { "fullscreen app → hidden" } else { "shown again" });
+                    println!("[coquou] {}", if fullscreen { "fullscreen app → hidden" } else { "shown again" });
                 }
                 if let Some(b) = battery {
                     if b != power.battery {
-                        println!("[perchy] power source: {}", if b { "battery → 30 fps" } else { "AC" });
+                        println!("[coquou] power source: {}", if b { "battery → 30 fps" } else { "AC" });
                         power.battery = b;
                         changed = true;
                     }
@@ -185,83 +186,154 @@ fn watch<R: Runtime>(app: AppHandle<R>) {
     });
 }
 
-/// Tray menu; rebuilt whenever a pet is installed so "换宠物" stays current.
+/// Tray menu: only quick actions; everything else lives in the app window.
+/// Rebuilt when pets, the current pet or the update state change.
 fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
-    // "换宠物" lists the built-in cat plus every pet found on disk
-    // (Perchy's own pets dir, the user's Codex pets and the bundled presets).
     let ui = app.try_state::<TrayState>().map(|s| s.0.lock().unwrap().clone()).unwrap_or_default();
+    // "换宠物" lists the built-in cat plus every pet found on disk.
     let switcher = Submenu::with_id(app, "pets", "换宠物", true)?;
     let on = |key: &str| ui.pet == key;
-    switcher.append(&CheckMenuItem::with_id(app, "pet:builtin", "团团（内置）", true, on("builtin"), None::<&str>)?)?;
     for pet in pets::list(app) {
-        let tag = match pet.source {
-            "codex" => " · Codex",
-            "preset" => " · 预设",
-            _ => "",
-        };
-        let label = format!("{}{}", pet.display_name, tag);
-        switcher.append(&CheckMenuItem::with_id(app, format!("pet:{}", pet.key), label, true, on(&pet.key), None::<&str>)?)?;
+        switcher.append(&CheckMenuItem::with_id(app, format!("pet:{}", pet.key), &pet.display_name, true, on(&pet.key), None::<&str>)?)?;
     }
-    let displays = Submenu::with_id(app, "displays", "显示器", true)?;
-    if let Some(window) = app.get_webview_window("main") {
-        let current = screens::target(&window).map(|(k, _)| k);
-        for (k, label, _) in screens::list(&window) {
-            let checked = current.as_ref() == Some(&k);
-            displays.append(&CheckMenuItem::with_id(app, format!("display:{k}"), label, true, checked, None::<&str>)?)?;
-        }
+    switcher.append(&CheckMenuItem::with_id(app, "pet:builtin", "团团", true, on("builtin"), None::<&str>)?)?;
+    switcher.append(&PredefinedMenuItem::separator(app)?)?;
+    switcher.append(&MenuItem::with_id(app, "library", "管理宠物…", true, None::<&str>)?)?;
+
+    let sep = || PredefinedMenuItem::separator(app);
+    let open = MenuItem::with_id(app, "open", "打开 Coquou", true, None::<&str>)?;
+    let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<R>>> = vec![Box::new(open)];
+    if let Some(v) = update::available_version(app) {
+        items.push(Box::new(MenuItem::with_id(app, "update", format!("有新版本 {v}，查看更新…"), true, None::<&str>)?));
     }
-    // Size multiplier for the current pet (remembered per pet by the frontend).
-    let size = Submenu::with_id(app, "size", "大小", true)?;
-    for (id, label) in [("size:0.75", "小"), ("size:1", "标准"), ("size:1.3", "大"), ("size:1.6", "特大"), ("size:2", "超大")] {
-        let checked = id == format!("size:{}", ui.size);
-        size.append(&CheckMenuItem::with_id(app, id, label, true, checked, None::<&str>)?)?;
-    }
-    // Where the pet may roam (kept away from the middle of the screen by default).
-    let zone = Submenu::with_id(app, "zone", "活动范围", true)?;
-    for (id, label) in [
-        ("zone:corners", "两边角落（默认）"),
-        ("zone:right", "只在右下角"),
-        ("zone:left", "只在左下角"),
-        ("zone:full", "整个屏幕底部"),
-    ] {
-        let checked = id == format!("zone:{}", ui.zone);
-        zone.append(&CheckMenuItem::with_id(app, id, label, true, checked, None::<&str>)?)?;
-    }
-    let update = match update::available_version(app) {
-        Some(v) => MenuItem::with_id(app, "update", format!("有新版本 {v}，查看更新…"), true, None::<&str>)?,
-        None => MenuItem::with_id(app, "update", "检查更新…", true, None::<&str>)?,
-    };
-    Menu::with_items(
-        app,
-        &[
-            &update,
-            &MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?,
-            &PredefinedMenuItem::separator(app)?,
-            &switcher,
-            &size,
-            &zone,
-            &displays,
-            &MenuItem::with_id(app, "hatch", "孵化新宠物（AI）…", true, None::<&str>)?,
-            &MenuItem::with_id(app, "export", "导出当前宠物为 .pet", true, None::<&str>)?,
-            &MenuItem::with_id(app, "open-pets-dir", "打开宠物文件夹", true, None::<&str>)?,
-            &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "reset", "把它叫回来", true, None::<&str>)?,
-            &MenuItem::with_id(app, "sleep", "哄它睡觉", true, None::<&str>)?,
-            &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "quit", "退出 Perchy", true, None::<&str>)?,
-        ],
-    )
+    items.push(Box::new(sep()?));
+    items.push(Box::new(switcher));
+    items.push(Box::new(MenuItem::with_id(app, "reset", "叫它回来", true, None::<&str>)?));
+    items.push(Box::new(MenuItem::with_id(app, "sleep", "哄它睡觉", true, None::<&str>)?));
+    items.push(Box::new(sep()?));
+    items.push(Box::new(MenuItem::with_id(app, "quit", "退出 Coquou", true, None::<&str>)?));
+    let refs: Vec<&dyn tauri::menu::IsMenuItem<R>> = items.iter().map(|b| b.as_ref()).collect();
+    Menu::with_items(app, &refs)
 }
 
 fn open_pets_dir<R: Runtime>(app: &AppHandle<R>) {
-    let Some(dir) = pets::perchy_root(app) else { return };
+    let Some(dir) = pets::coquou_root(app) else { return };
     let _ = std::fs::create_dir_all(&dir);
+    open_path(&dir);
+}
+
+/// Open a folder or URL with the system's default handler.
+fn open_path(target: impl AsRef<std::ffi::OsStr>) {
     #[cfg(target_os = "macos")]
-    let _ = std::process::Command::new("open").arg(&dir).spawn();
+    let _ = std::process::Command::new("open").arg(target).spawn();
     #[cfg(target_os = "windows")]
-    let _ = std::process::Command::new("explorer").arg(&dir).spawn();
+    let _ = std::process::Command::new("rundll32").arg("url.dll,FileProtocolHandler").arg(target).spawn();
     #[cfg(target_os = "linux")]
-    let _ = std::process::Command::new("xdg-open").arg(&dir).spawn();
+    let _ = std::process::Command::new("xdg-open").arg(target).spawn();
+}
+
+/// Project links shown in the app window (fixed list, nothing else opens).
+#[tauri::command]
+fn open_link(which: String) -> Result<(), String> {
+    let url = match which.as_str() {
+        "home" => "https://github.com/continuationcs/perchy",
+        "issues" => "https://github.com/continuationcs/perchy/issues",
+        "releases" => "https://github.com/continuationcs/perchy/releases",
+        _ => return Err(format!("unknown link {which}")),
+    };
+    open_path(url);
+    Ok(())
+}
+
+/// Show one pet's folder in Finder / Explorer.
+#[tauri::command]
+fn reveal_pet(app: AppHandle, key: String) -> Result<(), String> {
+    let dir = pets::pet_dir(&app, &key)?;
+    open_path(&dir);
+    Ok(())
+}
+
+/// Delete a pet installed into Coquou (presets and Codex pets are read-only).
+#[tauri::command]
+fn delete_pet(app: AppHandle, key: String) -> Result<(), String> {
+    if !key.starts_with("coquou:") {
+        return Err("只能删除安装到 Coquou 的宠物".into());
+    }
+    let dir = pets::pet_dir(&app, &key)?;
+    let root = pets::coquou_root(&app).and_then(|r| r.canonicalize().ok()).ok_or("找不到宠物文件夹")?;
+    if dir.parent() != Some(root.as_path()) {
+        return Err("宠物路径不对".into());
+    }
+    std::fs::remove_dir_all(&dir).map_err(|e| format!("删除失败：{e}"))?;
+    println!("[coquou] deleted {key}");
+    refresh_tray(&app);
+    let _ = app.emit("pets-changed", serde_json::json!({ "removed": key }));
+    Ok(())
+}
+
+/// Install a .pet / .zip picked in the app window (bytes arrive as the raw
+/// request body, the file name in the `x-name` header).
+#[tauri::command]
+fn install_bytes(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<install::Installed, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("expected raw bytes".into()) };
+    let name = request
+        .headers()
+        .get("x-name")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| urlencoding_decode(v))
+        .unwrap_or_else(|| "pet.pet".into());
+    let ext = if name.to_lowercase().ends_with(".zip") { "zip" } else { "pet" };
+    let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let file = dir.join(format!("import-{}.{ext}", std::process::id()));
+    std::fs::write(&file, bytes).map_err(|e| e.to_string())?;
+    let result = install_one(&app, &file);
+    let _ = std::fs::remove_file(&file);
+    if result.is_ok() {
+        refresh_tray(&app);
+    }
+    result.map_err(|e| format!("{name}：{e}"))
+}
+
+/// Paths of the last drop on the app window.
+#[derive(Default)]
+struct Dropped(Mutex<Vec<PathBuf>>);
+
+/// Install what was just dropped on the app window.
+#[tauri::command]
+fn install_dropped(app: AppHandle, dropped: State<Dropped>) {
+    let paths = std::mem::take(&mut *dropped.0.lock().unwrap());
+    install_paths(&app, paths);
+}
+
+/// Bytes of an image that was just dropped on the app window (hatch reference).
+#[tauri::command]
+fn read_dropped(dropped: State<Dropped>, path: String) -> Result<tauri::ipc::Response, String> {
+    let file = dropped.0.lock().unwrap().iter().find(|p| p.display().to_string() == path).cloned().ok_or("不是刚拖进来的文件")?;
+    let meta = std::fs::metadata(&file).map_err(|e| e.to_string())?;
+    if !meta.is_file() || meta.len() > 40 * 1024 * 1024 {
+        return Err("图片太大或不是文件".into());
+    }
+    std::fs::read(&file).map(tauri::ipc::Response::new).map_err(|e| e.to_string())
+}
+
+/// Minimal %XX decoding for the file-name header.
+fn urlencoding_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// Pet installed while the webview may not be listening yet (double-click
@@ -274,19 +346,23 @@ fn take_pending_pet(state: State<PendingPet>) -> Option<String> {
     state.0.lock().unwrap().take()
 }
 
+/// Install one pet and announce it (`pet-installed`); errors are returned.
+fn install_one<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Result<install::Installed, String> {
+    let done = install::install(app, path)?;
+    println!("[coquou] installed {} from {}", done.key, path.display());
+    *app.state::<PendingPet>().0.lock().unwrap() = Some(done.key.clone());
+    let _ = app.emit("pet-installed", done.clone());
+    Ok(done)
+}
+
 /// Install pets from dropped / opened paths, then tell the frontend.
 fn install_paths<R: Runtime>(app: &AppHandle<R>, paths: Vec<PathBuf>) {
     let mut any = false;
     for path in paths {
-        match install::install(app, &path) {
-            Ok(done) => {
-                println!("[perchy] installed {} from {}", done.key, path.display());
-                *app.state::<PendingPet>().0.lock().unwrap() = Some(done.key.clone());
-                let _ = app.emit("pet-installed", done);
-                any = true;
-            }
+        match install_one(app, &path) {
+            Ok(_) => any = true,
             Err(error) => {
-                eprintln!("[perchy] install failed for {}: {error}", path.display());
+                eprintln!("[coquou] install failed for {}: {error}", path.display());
                 let _ = app.emit("pet-install-failed", serde_json::json!({
                     "file": path.file_name().map(|n| n.to_string_lossy().into_owned()),
                     "error": error,
@@ -300,7 +376,7 @@ fn install_paths<R: Runtime>(app: &AppHandle<R>, paths: Vec<PathBuf>) {
 }
 
 /// Save a pet assembled by the hatch window (Codex v2 PNG atlas + optional
-/// perchy.json), then install it through the same validated path as a .pet.
+/// coquou.json), then install it through the same validated path as a .pet.
 #[tauri::command]
 fn install_generated(
     app: AppHandle,
@@ -308,7 +384,7 @@ fn install_generated(
     display_name: String,
     description: String,
     spritesheet_png: String,
-    perchy_json: Option<String>,
+    coquou_json: Option<String>,
 ) -> Result<install::Installed, String> {
     let dir = app
         .path()
@@ -327,8 +403,8 @@ fn install_generated(
     let write = |name: &str, bytes: &[u8]| std::fs::write(dir.join(name), bytes).map_err(|e| e.to_string());
     write("pet.json", serde_json::to_string_pretty(&manifest).unwrap().as_bytes())?;
     write("spritesheet.png", &B64.decode(spritesheet_png).map_err(|e| e.to_string())?)?;
-    if let Some(ext) = perchy_json {
-        write("perchy.json", ext.as_bytes())?;
+    if let Some(ext) = coquou_json {
+        write("coquou.json", ext.as_bytes())?;
     }
     let result = install::install(&app, &dir);
     let _ = std::fs::remove_dir_all(&dir);
@@ -347,23 +423,25 @@ fn export_pet(app: AppHandle, key: String) -> Result<String, String> {
     let _ = std::process::Command::new("open").arg("-R").arg(&path).spawn();
     #[cfg(target_os = "windows")]
     let _ = std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn();
-    println!("[perchy] exported {key} → {}", path.display());
+    println!("[coquou] exported {key} → {}", path.display());
     Ok(path.file_name().unwrap().to_string_lossy().into_owned())
 }
 
-/// Chinese app menu bar (shown while the hatch window makes Perchy a regular
+/// Chinese app menu bar (shown while the hatch window makes Coquou a regular
 /// app). The Edit menu keeps ⌘C / ⌘V working in text fields.
 #[cfg(target_os = "macos")]
 fn app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let sep = || PredefinedMenuItem::separator(app);
-    let perchy = Submenu::with_items(app, "Perchy", true, &[
-        &PredefinedMenuItem::about(app, Some("关于 Perchy"), None)?,
+    let coquou = Submenu::with_items(app, "Coquou", true, &[
+        &MenuItem::with_id(app, "menu-about", "关于 Coquou", true, None::<&str>)?,
         &sep()?,
-        &PredefinedMenuItem::hide(app, Some("隐藏 Perchy"))?,
+        &MenuItem::with_id(app, "menu-settings", "设置…", true, Some("CmdOrCtrl+,"))?,
+        &sep()?,
+        &PredefinedMenuItem::hide(app, Some("隐藏 Coquou"))?,
         &PredefinedMenuItem::hide_others(app, Some("隐藏其他"))?,
         &PredefinedMenuItem::show_all(app, Some("全部显示"))?,
         &sep()?,
-        &PredefinedMenuItem::quit(app, Some("退出 Perchy"))?,
+        &PredefinedMenuItem::quit(app, Some("退出 Coquou"))?,
     ])?;
     let edit = Submenu::with_items(app, "编辑", true, &[
         &PredefinedMenuItem::undo(app, Some("撤销"))?,
@@ -378,11 +456,36 @@ fn app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         &PredefinedMenuItem::minimize(app, Some("最小化"))?,
         &PredefinedMenuItem::close_window(app, Some("关闭窗口"))?,
     ])?;
-    Menu::with_items(app, &[&perchy, &edit, &window])
+    Menu::with_items(app, &[&coquou, &edit, &window])
+}
+
+/// Tray and app-menu actions. Pet actions go to the overlay as `tray` events.
+fn on_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
+    match id {
+        "quit" => app.exit(0),
+        "open" => open_app(app, None),
+        "library" => open_app(app, Some("pets")),
+        "update" => open_app(app, Some("about")),
+        "menu-settings" => open_app(app, Some("general")),
+        "menu-about" => open_app(app, Some("about")),
+        id => {
+            let _ = app.emit("tray", id.to_string());
+        }
+    }
+}
+
+/// Tray icon: a monochrome template on macOS (adapts to the menu bar), the
+/// coloured icon elsewhere.
+fn tray_icon() -> tauri::image::Image<'static> {
+    #[cfg(target_os = "macos")]
+    let bytes: &[u8] = include_bytes!("../icons/tray-template.png");
+    #[cfg(not(target_os = "macos"))]
+    let bytes: &[u8] = include_bytes!("../icons/tray.png");
+    tauri::image::Image::from_bytes(bytes).expect("tray icon")
 }
 
 /// Normal, focusable app windows (as opposed to the pet overlay).
-const APP_WINDOWS: [&str; 2] = ["hatch", "settings"];
+const APP_WINDOWS: [&str; 1] = ["app"];
 
 /// Show the window `label` if it exists, otherwise build it with `make`.
 fn open_app_window<R: Runtime>(
@@ -396,7 +499,7 @@ fn open_app_window<R: Runtime>(
         let _ = w.set_focus();
         return;
     }
-    // While one is open, show Perchy in the Dock / app switcher like a normal app.
+    // While one is open, show Coquou in the Dock / app switcher like a normal app.
     #[cfg(target_os = "macos")]
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
     let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(format!("{label}.html").into()));
@@ -404,36 +507,52 @@ fn open_app_window<R: Runtime>(
         Ok(w) => {
             let _ = w.set_focus();
         }
-        Err(e) => eprintln!("[perchy] cannot open {label} window: {e}"),
+        Err(e) => eprintln!("[coquou] cannot open {label} window: {e}"),
     }
 }
 
-/// The "孵化新宠物" window.
+/// The hatch page of the app window. The dev self-test needs a fresh window
+/// (its config is injected at creation).
 fn open_hatch<R: Runtime>(app: &AppHandle<R>, selftest: Option<serde_json::Value>) {
-    open_app_window(app, "hatch", |b| {
-        // Let the page receive HTML5 file drops (reference image) instead of
-        // the native handler.
-        let mut b = b.disable_drag_drop_handler();
-        if let Some(cfg) = selftest {
-            b = b.initialization_script(format!("window.__PERCHY_SELFTEST__ = {cfg};"));
+    match selftest {
+        None => open_app(app, Some("hatch")),
+        Some(cfg) => {
+            if let Some(w) = app.get_webview_window("app") {
+                let _ = w.destroy();
+            }
+            open_app_with(app, Some("hatch"), Some(format!("window.__COQUOU_SELFTEST__ = {cfg};")));
         }
-        b.title("孵化新宠物 · Perchy").inner_size(1040.0, 780.0).min_inner_size(820.0, 600.0)
-    });
+    }
 }
 
-/// The settings window, optionally on a given page. Files dropped on it are
-/// installed like on the pet.
-fn open_settings<R: Runtime>(app: &AppHandle<R>, page: Option<&str>) {
-    if let (Some(page), Some(_)) = (page, app.get_webview_window("settings")) {
-        let _ = app.emit_to("settings", "settings-page", page);
+/// The app window ("Coquou"), optionally on a given page: pets, hatch,
+/// behaviour, general, about. Files dropped on it are installed.
+fn open_app<R: Runtime>(app: &AppHandle<R>, page: Option<&str>) {
+    open_app_with(app, page, None);
+}
+
+fn open_app_with<R: Runtime>(app: &AppHandle<R>, page: Option<&str>, init: Option<String>) {
+    if let (Some(page), Some(_)) = (page, app.get_webview_window("app")) {
+        let _ = app.emit_to("app", "app-page", page);
     }
     let page = page.map(str::to_string);
-    open_app_window(app, "settings", move |b| {
+    open_app_window(app, "app", move |b| {
         let b = match page {
-            Some(p) => b.initialization_script(format!("window.__PERCHY_PAGE__ = {};", serde_json::json!(p))),
+            Some(p) => b.initialization_script(format!("window.__COQUOU_PAGE__ = {};", serde_json::json!(p))),
             None => b,
         };
-        b.title("设置 · Perchy").inner_size(640.0, 720.0).min_inner_size(520.0, 480.0)
+        let b = match init {
+            Some(js) => b.initialization_script(js),
+            None => b,
+        };
+        let b = b.title("Coquou").inner_size(1000.0, 680.0).min_inner_size(780.0, 540.0);
+        // Unified title bar: the sidebar runs up under the traffic lights.
+        #[cfg(target_os = "macos")]
+        let b = b
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true)
+            .traffic_light_position(tauri::LogicalPosition::new(18.0, 24.0));
+        b
     });
 }
 
@@ -441,7 +560,7 @@ fn open_settings<R: Runtime>(app: &AppHandle<R>, page: Option<&str>) {
 fn open_window(app: AppHandle, name: String) -> Result<(), String> {
     match name.as_str() {
         "hatch" => open_hatch(&app, None),
-        "settings" => open_settings(&app, None),
+        "app" => open_app(&app, None),
         "pets-dir" => open_pets_dir(&app),
         _ => return Err(format!("unknown window {name}")),
     }
@@ -452,7 +571,7 @@ fn argv_has(flag: &str) -> bool {
     std::env::args().any(|a| a == flag)
 }
 
-/// File arguments (Windows/Linux file association, or `perchy my.pet`).
+/// File arguments (Windows/Linux file association, or `coquou my.pet`).
 fn path_args(args: impl IntoIterator<Item = String>, cwd: &Path) -> Vec<PathBuf> {
     args.into_iter()
         .skip(1)
@@ -468,12 +587,17 @@ fn main() {
         // arguments here instead of starting another pet.
         .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             let paths = path_args(argv, Path::new(&cwd));
+            // Launching Coquou again (Start menu, Launchpad) opens its window.
+            if paths.is_empty() {
+                open_app(app, None);
+            }
             install_paths(app, paths);
         }))
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(update::UpdateState::default())
         .manage(PendingPet::default())
+        .manage(Dropped::default())
         .manage(PowerState::default())
         .manage(TrayState::default())
         .invoke_handler(tauri::generate_handler![
@@ -486,6 +610,12 @@ fn main() {
             open_window,
             settings::get_settings,
             settings::set_setting,
+            open_link,
+            reveal_pet,
+            delete_pet,
+            install_bytes,
+            install_dropped,
+            read_dropped,
             update::update_status,
             update::update_check,
             update::update_install,
@@ -514,9 +644,14 @@ fn main() {
                     let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
                 }
             }
-            // Files dropped on the settings window are installed.
-            if let (WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }), "settings") = (event, window.label()) {
-                install_paths(window.app_handle(), paths.clone());
+            // Files dropped on the app window: the page decides (reference
+            // image on the hatch page, otherwise install) via `install_dropped`
+            // / `read_dropped`, which only accept these exact paths.
+            if let (WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }), "app") = (event, window.label()) {
+                let app = window.app_handle();
+                *app.state::<Dropped>().0.lock().unwrap() = paths.clone();
+                let list: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
+                let _ = app.emit_to("app", "app-drop", list);
             }
             // Drops only reach us while the cursor is over the pet (elsewhere
             // the window is click-through), so this is "feeding" it a file.
@@ -544,7 +679,11 @@ fn main() {
 
             #[cfg(target_os = "macos")]
             app.set_menu(app_menu(app.handle())?)?;
+            // One handler for both the tray menu and the macOS app menu
+            // (a tray-specific handler would fire in addition to this one).
+            app.on_menu_event(|app, event| on_menu(app, event.id.as_ref()));
 
+            migrate::run(app.handle());
             settings::init(app.handle());
 
             let window = app.get_webview_window("main").expect("main window");
@@ -553,34 +692,33 @@ fn main() {
             let _ = window.set_visible_on_all_workspaces(true);
             window.show()?;
 
-            TrayIconBuilder::with_id("main")
-                .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Perchy")
+            let tray = TrayIconBuilder::with_id("main")
+                .icon(tray_icon())
+                .icon_as_template(cfg!(target_os = "macos"))
+                .tooltip("Coquou")
                 .menu(&build_menu(app.handle())?)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "quit" => app.exit(0),
-                    "open-pets-dir" => open_pets_dir(app),
-                    "hatch" => open_hatch(app, None),
-                    "settings" => open_settings(app, None),
-                    "update" => open_settings(app, Some("about")),
-                    id if id.starts_with("display:") => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            screens::choose(&window, &id["display:".len()..]);
-                            refresh_tray(app);
+                // Windows convention: left click opens the app, right click the menu.
+                .show_menu_on_left_click(!cfg!(target_os = "windows"))
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        if cfg!(target_os = "windows") {
+                            open_app(tray.app_handle(), None);
                         }
                     }
-                    id => {
-                        let _ = app.emit("tray", id.to_string());
-                    }
-                })
-                .build(app)?;
+                });
+            tray.build(app)?;
 
             let cwd = std::env::current_dir().unwrap_or_default();
             install_paths(app.handle(), path_args(std::env::args(), &cwd));
-            if argv_has("--settings") {
-                open_settings(app.handle(), None);
+            if argv_has("--settings") || argv_has("--window") {
+                open_app(app.handle(), None);
             }
-            // `perchy --pet preset:qiqi` starts with (and remembers) that pet.
+            // `coquou --pet preset:qiqi` starts with (and remembers) that pet.
             let argv: Vec<String> = std::env::args().collect();
             if let Some(key) = argv.iter().position(|a| a == "--pet").and_then(|i| argv.get(i + 1)) {
                 *app.state::<PendingPet>().0.lock().unwrap() = Some(key.clone());
@@ -588,7 +726,7 @@ fn main() {
             watch(app.handle().clone());
             update::start(app.handle().clone());
 
-            // Dev: `perchy --hatch-selftest <base url> <images|chat> [transparent] [persist]` runs the
+            // Dev: `coquou --hatch-selftest <base url> <images|chat> [transparent] [persist]` runs the
             // hatch flow end-to-end against a mock API (tools/mock-image-api.py).
             let args: Vec<String> = std::env::args().collect();
             if let Some(i) = args.iter().position(|a| a == "--hatch-selftest") {
@@ -603,9 +741,14 @@ fn main() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building Perchy");
+        .expect("error while building Coquou");
 
     app.run(|app, event| {
+        // macOS: clicking Coquou in Finder / Launchpad while it runs.
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { .. } = &event {
+            open_app(app, None);
+        }
         // macOS delivers double-clicked files as an "open URLs" event.
         #[cfg(any(target_os = "macos", target_os = "ios"))]
         if let tauri::RunEvent::Opened { urls } = &event {

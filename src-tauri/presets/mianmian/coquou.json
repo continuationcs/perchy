@@ -1,6 +1,6 @@
 {
-  "format": "perchy/1",
-  "author": "Perchy contributors",
+  "format": "coquou/1",
+  "author": "Coquou contributors",
   "license": "CC-BY-4.0",
   "tags": [
     "preset"

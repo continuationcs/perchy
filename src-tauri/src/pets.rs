@@ -1,9 +1,9 @@
 //! Pet discovery and sandboxed file access.
 //!
 //! A pet is a directory holding a Codex-compatible `pet.json` + spritesheet,
-//! optionally extended by `perchy.json` (see docs/pet-format.md). Pets are
+//! optionally extended by `coquou.json` (see docs/pet-format.md). Pets are
 //! looked up in two roots:
-//!   - `perchy`: <app data>/pets            — pets installed into Perchy
+//!   - `coquou`: <app data>/pets            — pets installed into Coquou
 //!   - `codex`:  ${CODEX_HOME:-~/.codex}/pets — read in place, never modified
 //!   - `preset`: <resources>/presets          — shipped with the app, read-only
 //!
@@ -24,15 +24,20 @@ pub struct PetEntry {
     pub extended: bool,
 }
 
-/// Where Perchy installs pets.
-pub fn perchy_root<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
+/// Where Coquou installs pets.
+pub fn coquou_root<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
     app.path().app_data_dir().ok().map(|d| d.join("pets"))
+}
+
+/// Where Codex keeps its pets (`$CODEX_HOME/pets`, default ~/.codex/pets).
+pub fn codex_root<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
+    roots(app).into_iter().find(|(s, _)| *s == "codex").map(|(_, p)| p)
 }
 
 fn roots<R: Runtime>(app: &AppHandle<R>) -> Vec<(&'static str, PathBuf)> {
     let mut roots = Vec::new();
-    if let Some(dir) = perchy_root(app) {
-        roots.push(("perchy", dir));
+    if let Some(dir) = coquou_root(app) {
+        roots.push(("coquou", dir));
     }
     let codex_home = std::env::var_os("CODEX_HOME")
         .map(PathBuf::from)
@@ -71,7 +76,7 @@ pub fn list<R: Runtime>(app: &AppHandle<R>) -> Vec<PetEntry> {
                 id,
                 display_name,
                 source,
-                extended: entry.path().join("perchy.json").is_file(),
+                extended: crate::install::EXT_FILES.iter().any(|f| entry.path().join(f).is_file()),
             });
         }
     }

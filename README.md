@@ -1,6 +1,8 @@
-# Perchy 栖栖 — PoC
+# Coquou — 开源桌面宠物
 
-桌面宠物运行器的技术验证：透明置顶全屏窗口 + 像素级点击穿透 + 状态机与物理。
+可爱的小家伙在屏幕角落溜达，可以摸、拎、扔；兼容 Codex 宠物包，也能用 AI 孵化你自己的宠物。macOS / Windows，代码 MIT 开源。
+
+> 曾用名 Perchy（应用标识 `io.perchy.desktop`）。新版本第一次启动时会把旧的宠物、设置和 AI 配置搬到 `io.github.coquou` 下，API key 在第一次用到时从旧的钥匙串条目搬过来。窗口里的偏好（当前宠物、大小、活动范围等）存在 WebView 里，改名后会恢复默认，重新选一次即可。
 
 ## 运行
 
@@ -9,7 +11,7 @@ cd src-tauri
 cargo run
 ```
 
-退出：菜单栏托盘图标 →「退出 Perchy」。
+退出：菜单栏托盘图标 →「退出 Coquou」。
 
 ## 可以试的互动
 
@@ -21,27 +23,30 @@ cargo run
 | 拖动后甩出去 | 带速度飞出，重力、撞墙反弹、落地压扁 |
 | 鼠标在它身上来回蹭 | 被撸 → 脸红 + 爱心 |
 | 鼠标靠近 | 眼睛跟着鼠标 |
-| 一段时间没理它（默认 45 秒，可在设置里改） | 可能睡着（Zzz） |
-| 托盘菜单 | 设置… / 换宠物 / 大小（小～超大，按宠物记住）/ 活动范围 / 显示器 / 导出当前宠物为 .pet（存到「下载」）/ 把它叫回来 / 哄它睡觉 |
+| 一段时间没理它（默认 45 秒，可在主窗口「行为」里改） | 可能睡着（Zzz） |
+| 托盘菜单 | 打开 Coquou / 换宠物 / 叫它回来 / 哄它睡觉 / 退出；其余设置都在主窗口里 |
 
-## 设置
+## 主窗口
 
-托盘「设置…」打开设置窗口（开发时可用 `cargo run -- --settings` 直接打开）：
+托盘「打开 Coquou」（Windows 上单击托盘图标；再次启动 Coquou 或在 macOS 访达里双击它也会打开；开发时 `cargo run -- --window`）：
 
 | 页 | 内容 |
 |---|---|
-| 宠物 | 带缩略图的宠物列表，点击切换，悬停可导出；孵化新宠物；打开宠物文件夹；大小。把 .pet / .zip / 宠物文件夹拖进窗口即安装 |
-| 行为 | 活动范围；活跃程度（安静 / 正常 / 活泼）；自动睡觉（20 秒～5 分钟 / 从不） |
-| 系统 | 显示器；全屏时自动隐藏；开机自动启动；用电池时省电（30 帧） |
-| 关于与更新 | 版本、检查更新、更新说明、「更新并重启」、自动检查更新开关；授权 |
+| 宠物 | 宠物库：搜索、按来源筛选（预设 / 我的 / Codex）、缩略图悬停时播放动画；右侧详情可预览各个动作，「让它上桌面」，调大小，导出 .pet，在访达 / 资源管理器中显示，删除自己安装的宠物。「导入」按钮或把 .pet / .zip 拖进窗口即安装 |
+| 孵化 | AI 孵化：① AI 接口 → ② 描述宠物（可拖入参考图）→ ③ 形象 → ④ 动作 → ⑤ 安装，从上到下一页完成 |
+| 行为 | 活动范围（图示四选一）、活跃程度、自动睡觉、大小 |
+| 通用 | 显示器、全屏时自动隐藏、开机自启、用电池时省电、宠物文件夹和 Codex 宠物目录 |
+| 关于与更新 | 版本、项目主页 / 反馈 / 发布记录链接、检查更新、更新说明、「更新并重启」、自动检查更新开关、授权 |
 
-宠物、大小、活动范围、活跃程度、睡觉时间由桌宠窗口保存（localStorage），设置窗口和托盘只是发同样的指令、显示它上报的状态；
+首次启动会打开主窗口并显示欢迎提示，宠物也会说一句 Coquou 住在哪里。托盘只保留常用操作：打开 Coquou、有新版本时的更新入口、换宠物、叫它回来、哄它睡觉、退出。macOS 上窗口打开时，应用菜单里有「设置…」（⌘,）。
+
+宠物、大小、活动范围、活跃程度、睡觉时间由桌宠窗口保存（localStorage），主窗口和托盘只是发同样的指令、显示它上报的状态；
 显示器、全屏隐藏、省电保存在 `<应用配置目录>/settings.json`；开机自启用系统机制（macOS LaunchAgent / Windows 注册表启动项）。
 
 ## 宠物
 
-宠物包格式见 [docs/pet-format.md](docs/pet-format.md)：**Codex v2 宠物包 + 可选 `perchy.json` 扩展**。
-启动时自动发现 `~/.codex/pets/` 下的 Codex 宠物、Perchy 自己的 pets 目录和随应用附带的预设宠物，托盘「换宠物」切换，选择会被记住。
+宠物包格式见 [docs/pet-format.md](docs/pet-format.md)：**Codex v2 宠物包 + 可选 `coquou.json` 扩展**。
+启动时自动发现 `~/.codex/pets/` 下的 Codex 宠物、Coquou 自己的 pets 目录和随应用附带的预设宠物，在主窗口「宠物」页或托盘「换宠物」切换，选择会被记住。
 首次启动时，有已安装的宠物（例如 Codex 宠物）就先用它，否则用看板娘栖栖。`cargo run -- --pet preset:qiqi` 可指定启动宠物。
 
 ### 预设宠物
@@ -51,7 +56,7 @@ cargo run
 | `qiqi` | 栖栖 | Q 版二次元少女，看板娘，头上停着一只小黄鸟 |
 | `mianmian` | 棉棉 | 蓝眼睛的布偶猫 |
 
-都是原创形象，用代码程序化绘制（[tools/presets/](tools/presets/)），渲染成标准 Codex v2 图集，另附 2× 高清图集（`perchy.json` 的 `hd`），所以既能在 Codex 里用，也能在 Perchy 里高清显示。
+都是原创形象，用代码程序化绘制（[tools/presets/](tools/presets/)），渲染成标准 Codex v2 图集，另附 2× 高清图集（`coquou.json` 的 `hd`），所以既能在 Codex 里用，也能在 Coquou 里高清显示。
 改了绘制代码后重新生成（需要本机装有 Chrome / Edge，用无头模式渲染）：
 
 ```bash
@@ -70,7 +75,7 @@ npx @tauri-apps/cli@2 build --debug --bundles app
 
 ## AI 孵化新宠物
 
-托盘「孵化新宠物（AI）…」打开孵化窗口：填 AI 接口 → 写描述或给一张参考图 → ① 生成形象 → ② 生成全部动作 → ③ 安装到桌面。
+主窗口「孵化」页（或「宠物」页的「孵化新宠物」）：填 AI 接口 → 写描述或把参考图拖进窗口 → 生成形象 → 生成全部动作 → 安装到桌面。在孵化页拖入一张图片会设为参考图，拖入 .pet / .zip 仍然是安装。
 
 **接口**：用户自己填 API 地址、key、模型名，支持两种 OpenAI 协议（可接官方或兼容的中转）：
 
@@ -81,7 +86,7 @@ npx @tauri-apps/cli@2 build --debug --bundles app
 
 接口拒绝的可选参数（如 `gpt-image-2` 不支持透明背景）会自动去掉重试并关闭该选项；不发送 `n`。
 
-API key 存系统钥匙串（服务名 `io.perchy.desktop.ai`），读到后在内存里缓存，一次运行最多访问一次钥匙串；列出配置时不读钥匙串。macOS 弹授权框时选「始终允许」；开发版每次重新编译签名都会变，会再问一次，正式签名的发布版不会，配置（不含 key）存 `<应用配置目录>/ai-profiles.json`。请求在 Rust 侧发出，key 不进 webview。
+API key 存系统钥匙串（服务名 `io.github.coquou.ai`），读到后在内存里缓存，一次运行最多访问一次钥匙串；列出配置时不读钥匙串。macOS 弹授权框时选「始终允许」；开发版每次重新编译签名都会变，会再问一次，正式签名的发布版不会，配置（不含 key）存 `<应用配置目录>/ai-profiles.json`。请求在 Rust 侧发出，key 不进 webview。
 
 **流程**（`src/hatch-pipeline.js`）：
 
@@ -119,20 +124,23 @@ python3 tools/analyze-atlas.py <宠物目录>/spritesheet.png
 src/                 前端（纯静态，无打包器）
   main.js            状态机、物理、命中检测、渲染循环
   cat.js             内置程序化形象「团团」
-  sprite.js          Codex 图集 + perchy.json 扩展的精灵图渲染器
+  sprite.js          Codex 图集 + coquou.json 扩展的精灵图渲染器
 src-tauri/src/main.rs  覆盖工作区的透明窗口、托盘、cursor_local / set_passthrough
 src-tauri/src/pets.rs  宠物发现（list_pets）与限定在宠物目录内的文件读取（read_pet_file）
 src-tauri/src/install.rs  .pet / .zip / 目录的校验与安装
 src-tauri/src/ai.rs     AI 接口配置、钥匙串、两种 OpenAI 协议调用
 src-tauri/src/hatch_run.rs  未完成孵化的存盘与恢复
-src/hatch.html / hatch.js / hatch-pipeline.js  孵化窗口与图像流水线
-src/settings.html / settings.js  设置窗口
+src/hatch.js / hatch-pipeline.js  主窗口孵化页的逻辑与图像流水线
+src-tauri/src/migrate.rs  从旧名 Perchy（io.perchy.desktop）迁移数据
+src/app.html / app.css / app.js  主窗口（宠物库、孵化入口、行为、通用、关于与更新）
 src-tauri/src/settings.rs  应用级设置（显示器、全屏隐藏、省电、开机自启、自动检查更新）
 src-tauri/src/update.rs    自动更新（检查、下载校验、安装重启）
 tools/release.py          发版脚本（改版本号、打包、上传、签名、发布 latest.json）
 tools/mock-image-api.py   离线测试用的模拟图像接口
 tools/presets/            预设宠物的绘制代码（rig.js 动作系统 + characters.js 角色）
 tools/build-presets.py    把预设渲染成 src-tauri/presets/ 下的宠物目录
+tools/icons/              应用图标方案（icons.js；preview.html 对比各方案）
+tools/build-icons.py      按选定方案生成全部应用图标和托盘图标
 ```
 
 ## 点击穿透原理
@@ -147,7 +155,7 @@ tools/build-presets.py    把预设渲染成 src-tauri/presets/ 下的宠物目�
 |---|---|---|
 | 全屏应用时自动隐藏 | 前台普通窗口盖满所在显示器（含菜单栏）即判定全屏；不需要录屏权限 | `SHQueryUserNotificationState`（全屏、D3D 独占、演示模式） |
 | 电池供电降到 30 fps | IOKit `IOPSGetProvidingPowerSourceType` | `GetSystemPowerStatus` |
-| 多显示器 | 托盘「显示器」选择；把宠物拖到另一块屏松手即搬过去；拔掉显示器回到主屏，插回来再回去 | 同左 |
+| 多显示器 | 主窗口「通用 → 显示器」选择；把宠物拖到另一块屏松手即搬过去；拔掉显示器回到主屏，插回来再回去 | 同左 |
 | 不抢焦点 | 窗口不可聚焦，点宠物不会打断正在输入的应用 | 同左 |
 
 ## 已知局限
@@ -159,5 +167,5 @@ tools/build-presets.py    把预设渲染成 src-tauri/presets/ 下的宠物目�
 ## 授权
 
 - 代码：[MIT](LICENSE)
-- 预设宠物素材（`src-tauri/presets/` 下的图片，以及生成它们的 `tools/presets/` 绘制代码所画出的形象）：[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，署名「Perchy contributors」
+- 预设宠物素材（`src-tauri/presets/` 下的图片，以及生成它们的 `tools/presets/` 绘制代码所画出的形象）：[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，署名「Coquou contributors」
 - 参与开发见 [CONTRIBUTING.md](CONTRIBUTING.md)

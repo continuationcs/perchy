@@ -21,7 +21,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, Runtime};
 
-const KEYCHAIN_SERVICE: &str = "io.perchy.desktop.ai";
+const KEYCHAIN_SERVICE: &str = "io.github.coquou.ai";
+/// Where keys lived before the app was renamed (moved on first use).
+const OLD_KEYCHAIN_SERVICES: [&str; 2] = ["io.github.pipkin.ai", "io.perchy.desktop.ai"];
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -94,7 +96,21 @@ fn get_key(id: &str) -> Option<String> {
     if let Some(k) = key_cache().lock().unwrap().get(id) {
         return Some(k.clone());
     }
-    let key = entry(id).ok()?.get_password().ok().filter(|k| !k.is_empty())?;
+    let key = match entry(id).ok()?.get_password().ok().filter(|k| !k.is_empty()) {
+        Some(k) => k,
+        None => {
+            // Saved under an old name: copy it over.
+            let (old, k) = OLD_KEYCHAIN_SERVICES.iter().find_map(|s| {
+                let e = keyring::Entry::new(s, id).ok()?;
+                let k = e.get_password().ok().filter(|k| !k.is_empty())?;
+                Some((e, k))
+            })?;
+            if entry(id).and_then(|e| e.set_password(&k).map_err(|e| e.to_string())).is_ok() {
+                let _ = old.delete_credential();
+            }
+            k
+        }
+    };
     key_cache().lock().unwrap().insert(id.to_string(), key.clone());
     Some(key)
 }
@@ -155,6 +171,11 @@ pub fn ai_delete_profile(app: AppHandle, id: String) -> Result<(), String> {
     let profiles: Vec<Profile> = load(&app).into_iter().filter(|p| p.id != id).collect();
     if let Ok(e) = entry(&id) {
         let _ = e.delete_credential();
+    }
+    for s in OLD_KEYCHAIN_SERVICES {
+        if let Ok(e) = keyring::Entry::new(s, &id) {
+            let _ = e.delete_credential();
+        }
     }
     key_cache().lock().unwrap().remove(&id);
     store(&app, &profiles)
@@ -279,7 +300,7 @@ async fn via_images(p: &Profile, key: &str, prompt: &str, images: &[String], siz
             .map_err(|e| format!("连接失败：{e}"))?;
         // No /images/edits here (e.g. OpenRouter): use /images + input_references.
         if matches!(resp.status().as_u16(), 404 | 405) {
-            println!("[perchy] ai: /images/edits not found, trying /images with input_references");
+            println!("[coquou] ai: /images/edits not found, trying /images with input_references");
             fell_back = true;
             images_with_references(p, key, prompt, images, size).await?
         } else {
@@ -374,7 +395,7 @@ pub async fn ai_generate(
     if let Err(e) = &result {
         let lower = e.to_lowercase();
         if let Some(fixed) = without_rejected(&profile, &lower) {
-            println!("[perchy] ai: endpoint rejected optional params, retrying without them");
+            println!("[coquou] ai: endpoint rejected optional params, retrying without them");
             profile = fixed;
             let mut all = load(&app);
             if let Some(slot) = all.iter_mut().find(|p| p.id == profile.id) {
@@ -394,7 +415,7 @@ pub async fn ai_generate(
     }
     let result = result.map(|(b64, _)| b64);
     println!(
-        "[perchy] ai {} {} refs={} size={} → {} in {:.1}s",
+        "[coquou] ai {} {} refs={} size={} → {} in {:.1}s",
         profile.protocol,
         profile.model,
         images.len(),

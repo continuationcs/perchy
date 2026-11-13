@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Build and publish a Perchy release on GitHub (used by the in-app updater).
+"""Build and publish a Coquou release on GitHub (used by the in-app updater).
 
 The updater signing key lives only on the release Mac
-(~/.tauri/perchy-updater.key, or $PERCHY_UPDATER_KEY). The Windows machine
+(~/.tauri/perchy-updater.key, or $COQUOU_UPDATER_KEY). The Windows machine
 just builds and uploads its installer; the Mac signs it and publishes.
 
     # Mac: set the version, commit, push
@@ -22,7 +22,7 @@ just builds and uploads its installer; the Mac signs it and publishes.
 `upload` and `publish` use the GitHub CLI; run them with a token that can
 write to the repo, e.g. GH_TOKEN=$(gh auth token -u <owner>).
 
-Optional: PERCHY_SIGN_IDENTITY="<codesign identity>" signs the macOS app
+Optional: COQUOU_SIGN_IDENTITY="<codesign identity>" signs the macOS app
 with that certificate (keeps keychain access across updates).
 """
 import argparse
@@ -44,7 +44,7 @@ CARGO = TAURI / "Cargo.toml"
 REPO = "continuationcs/perchy"
 NPX = "npx.cmd" if os.name == "nt" else "npx"
 CLI = [NPX, "-y", "@tauri-apps/cli@2"]
-KEY = Path(os.environ.get("PERCHY_UPDATER_KEY", Path.home() / ".tauri" / "perchy-updater.key"))
+KEY = Path(os.environ.get("COQUOU_UPDATER_KEY", Path.home() / ".tauri" / "perchy-updater.key"))
 
 
 def run(cmd, **kw):
@@ -81,7 +81,7 @@ def cmd_bump(a):
     cargo = CARGO.read_text(encoding="utf-8")
     cargo = re.sub(r'(?m)^version = "[^"]+"', f'version = "{a.version}"', cargo, count=1)
     CARGO.write_text(cargo, encoding="utf-8")
-    run(["cargo", "update", "-p", "perchy", "--offline"], cwd=TAURI)
+    run(["cargo", "update", "-p", "coquou", "--offline"], cwd=TAURI)
     print(f"{old} → {a.version}. Commit and push, then build on each machine.")
 
 
@@ -97,8 +97,8 @@ def cmd_build(a):
             sys.exit(f"updater key not found: {KEY}")
         env["TAURI_SIGNING_PRIVATE_KEY"] = KEY.read_text().strip()
         env.setdefault("TAURI_SIGNING_PRIVATE_KEY_PASSWORD", "")
-        if os.environ.get("PERCHY_SIGN_IDENTITY"):
-            env["APPLE_SIGNING_IDENTITY"] = os.environ["PERCHY_SIGN_IDENTITY"]
+        if os.environ.get("COQUOU_SIGN_IDENTITY"):
+            env["APPLE_SIGNING_IDENTITY"] = os.environ["COQUOU_SIGN_IDENTITY"]
         target = "universal-apple-darwin" if a.universal else None
         cmd = CLI + ["build", "--bundles", "app,dmg", "--config", json.dumps({"bundle": {"createUpdaterArtifacts": True}})]
         if target:
@@ -106,11 +106,11 @@ def cmd_build(a):
         run(cmd, cwd=TAURI, env=env)
         base = TAURI / "target" / (target or "") / "release" / "bundle"
         arch = "universal" if a.universal else ("aarch64" if platform.machine() == "arm64" else "x86_64")
-        tgz = base / "macos" / "Perchy.app.tar.gz"
-        shutil.copy(tgz, out / f"Perchy_{v}_darwin-{arch}.app.tar.gz")
-        shutil.copy(Path(str(tgz) + ".sig"), out / f"Perchy_{v}_darwin-{arch}.app.tar.gz.sig")
+        tgz = base / "macos" / "Coquou.app.tar.gz"
+        shutil.copy(tgz, out / f"Coquou_{v}_darwin-{arch}.app.tar.gz")
+        shutil.copy(Path(str(tgz) + ".sig"), out / f"Coquou_{v}_darwin-{arch}.app.tar.gz.sig")
         for dmg in (base / "dmg").glob("*.dmg"):
-            shutil.copy(dmg, out / f"Perchy_{v}_macos-{arch}.dmg")
+            shutil.copy(dmg, out / f"Coquou_{v}_macos-{arch}.dmg")
     elif system == "Windows":
         # No key here: the Mac signs the installer during `publish`.
         cmd = CLI + ["build", "--bundles", "nsis", "--config", json.dumps({"bundle": {"createUpdaterArtifacts": False}})]
@@ -118,7 +118,7 @@ def cmd_build(a):
         exes = sorted((TAURI / "target" / "release" / "bundle" / "nsis").glob(f"*_{v}_*-setup.exe"))
         if not exes:
             sys.exit("NSIS installer not found")
-        shutil.copy(exes[-1], out / f"Perchy_{v}_windows-x86_64-setup.exe")
+        shutil.copy(exes[-1], out / f"Coquou_{v}_windows-x86_64-setup.exe")
     else:
         sys.exit(f"unsupported build host: {system}")
     print("built into", out)
@@ -133,8 +133,8 @@ def ensure_draft(v, notes):
     try:
         gh("release", "view", tag, "--repo", REPO, capture=True)
     except subprocess.CalledProcessError:
-        gh("release", "create", tag, "--repo", REPO, "--draft", "--title", f"Perchy {v}",
-           "--notes", notes or f"Perchy {v}")
+        gh("release", "create", tag, "--repo", REPO, "--draft", "--title", f"Coquou {v}",
+           "--notes", notes or f"Coquou {v}")
     else:
         if notes:
             gh("release", "edit", tag, "--repo", REPO, "--notes", notes)

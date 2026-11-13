@@ -1,4 +1,4 @@
-// Sprite-pet renderer: plays Codex v1/v2 atlases and the optional perchy.json
+// Sprite-pet renderer: plays Codex v1/v2 atlases and the optional coquou.json
 // extension. Spec: docs/pet-format.md.
 
 const CODEX_CELL = [192, 208];
@@ -70,15 +70,16 @@ async function loadSpritePet(entry) {
   for (const [name, [row, durs]] of Object.entries(CODEX_ROWS))
     anims[name] = makeAnim(atlas, cw, ch, row, durs, true);
 
-  // perchy.json: extra states (own sheets or rows of the main atlas) + metadata.
-  const ext = await petJson(key, "perchy.json", true);
+  // coquou.json: extra states (own sheets or rows of the main atlas) + metadata.
+  // perchy.json: the same file from before the app was renamed.
+  const ext = (await petJson(key, "coquou.json", true)) ?? (await petJson(key, "perchy.json", true));
   if (ext?.states) {
     for (const [name, s] of Object.entries(ext.states)) {
       const img = s.sheet ? await petImage(key, s.sheet) : atlas;
       const [scw, sch] = s.cell || [cw, ch];
       const frames = s.frames ?? Math.floor(img.width / scw);
       const durs = s.durations || Array(frames).fill(1000 / (s.fps || 8));
-      if (durs.length !== frames) throw new Error(`perchy.json state "${name}": durations has ${durs.length} entries, frames is ${frames}`);
+      if (durs.length !== frames) throw new Error(`coquou.json state "${name}": durations has ${durs.length} entries, frames is ${frames}`);
       anims[name] = makeAnim(img, scw, sch, s.row || 0, durs, s.loop !== false, s.column || 0);
     }
   }
@@ -91,8 +92,8 @@ async function loadSpritePet(entry) {
       const img = await petImage(key, ext.hd);
       const k = img.width / atlas.width;
       if (Number.isInteger(k) && k >= 2 && k <= 4 && img.height === atlas.height * k) { hd = img; hk = k; }
-      else console.warn(`[perchy] ${ext.hd} is ${img.width}×${img.height}, not 2–4× the atlas; ignored`);
-    } catch (e) { console.warn("[perchy] hd atlas:", e); }
+      else console.warn(`[coquou] ${ext.hd} is ${img.width}×${img.height}, not 2–4× the atlas; ignored`);
+    } catch (e) { console.warn("[coquou] hd atlas:", e); }
   }
 
   const box = autoAnchor(atlas, cw, ch);
